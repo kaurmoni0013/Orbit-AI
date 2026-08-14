@@ -13,14 +13,14 @@ const createTocken = (id,email)=>{
     if(!process.env.JWT_SECRET){
         throw new Error("JWT secret key is missing")
     }
-    const tocken = jwt.sign({id,email}),process.evc.JWT_SECRET,{expiresIn:"1hr"}
+    const tocken = jwt.sign({id,email},process.env.JWT_SECRET,{expiresIn:"1hr"});
     return tocken;
 }
 
 const cookieOption = {
     httpOnly: true,
     secure:false,
-    maxAge60*60*1000
+    maxAge:60*60*1000
 }
 
 const signup = async (req,res)=>{
@@ -110,7 +110,7 @@ const login = async (req,res)=>{
 }
 
 const logout = async (req,res)=>{
-    
+
     
 }
 
