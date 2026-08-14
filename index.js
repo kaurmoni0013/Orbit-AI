@@ -3,6 +3,7 @@ import connectDB from './config/database.js';
 import dotenv from 'dotenv';
 import userRouter from './routes/userRouter.js';
 
+
 dotenv.config();
 const app = express();
 app.use(express.json);

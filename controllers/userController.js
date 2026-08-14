@@ -1,6 +1,7 @@
 import User from "../model/userSchema"
 import jwt from "jsonwebtocken";
 import bcrypt from "bcrypt"
+import {signupSchema,loginSchema} from "../validators/userValidator.js"
 
 // login
 // logout
@@ -23,14 +24,18 @@ const cookieOption = {
     maxAge:60*60*1000
 }
 
-const signup = async (req,res)=>{
+export const signup = async (req,res)=>{
     try{
-        const {name,age,email,password} = req.body;
-        if(!email || !password || !name){
-            return res.status(400).json({
-                message: "Email, Password or Name some fields are missing"
-            })
-        }
+        const result = signupSchema.safeParse(req.body);
+    if(!result.success){
+        return res.status(400).json({
+            message: result.error.issues[0].message
+        })
+    }
+
+        const {name,age,email,password} = result.data;
+
+        // email exist to nahi karta
         const user = await User.findOne({email});
 
         if(user){
@@ -69,15 +74,18 @@ const signup = async (req,res)=>{
 
 }
 
-const login = async (req,res)=>{
+export const login = async (req,res)=>{
     try{
-        const{email,password} = req.body;
+
+        const result = loginSchema.safeParse(req.body);
         
-        if(!email || !password){
-              return res.status(400).json({
-                message:"Email , password or some field are missing"
-            })
-        }
+         if(!result.success){
+        return res.status(400).json({
+            message: result.error.issues[0].message
+        })
+    }
+        const{email,password} = result.data;
+        
 
         // verify the password
         const existingUser = await User.findOne({email});
@@ -109,13 +117,65 @@ const login = async (req,res)=>{
     }
 }
 
-const logout = async (req,res)=>{
-
+export const logout = async (req,res)=>{ 
+    res.clearCookie("tocken",{
+        httpOnly:true,
+        secure:false,
+    });
     
+    res.status(200).json({
+        message:"User Logged Out Successfully"
+    });
 }
 
+// export const profile = async (req,res)=>{
 
+    // through this anyone can see my profile
+    // but in chatgpt we can't access other account
+    // try{
+    //     const{email} = req.body;
 
-const profile = async (req,res)=>{
+    //     if(!email){
+    //         return res.status(400).json({
+    //             message:"Email is missing"
+    //         })
+    //     }
+    //     const existingUser = await User.findOne({email});
+
+    //     if(!existingUser){
+    //         return res.json(401).json({message:"Invalid Email"})
+    //     }
+
+    //     res.status(200).json({
+    //         name:existingUser.name,
+    //         age:existingUser.age,
+    //         usage:existingUser.usage,
+    //         email:existingUser.email
+    //     })
+    // }
+    // catch(err){
+    //     console.log(err);
+    //     res.status(500).json({
+    //         message:"Internal server error"
+    //     })
+    // }
+
     
+// }
+
+export const profile = async (req,res)=>{
+    try{
+    res.status(200).json({
+            name:req.user.name,
+            age:req.user.age,
+            usage:req.user.usage,
+            email:req.user.email
+        })
+    }
+    catch(err){
+        console.log(err);
+        res.status(500).json({
+            message:"Internal server error"
+        })
+    }
 }
