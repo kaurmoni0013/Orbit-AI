@@ -7,9 +7,9 @@ const messageRouter = express.Router();
 messageRouter.use(authUserMiddleware);
 
 // getMessage, sendMessage
-
+messageRouter.post("/",sendMessage);
 messageRouter.get("/:chatId",getMessage);
-messageRouter.post("/:chatId")
+messageRouter.post("/:chatId",sendMessage);
 
 
 export default messageRouter;

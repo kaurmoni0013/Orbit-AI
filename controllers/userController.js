@@ -179,3 +179,21 @@ export const profile = async (req,res)=>{
         })
     }
 }
+
+export const deleteAccount = async(req,res)=>{
+    try{
+
+        // find all the chatId which belongs to the user
+
+        // Delete all the messages which belongs to the chatId:Message delete
+        // Delete all the chatId which belongs to this user
+        // Delete user Profile
+
+    }
+    catch(err){
+        console.log(err);
+        res.status(500).json({
+            message:"Internal server error"
+        });
+    }
+};
