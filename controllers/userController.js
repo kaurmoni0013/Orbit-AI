@@ -2,6 +2,8 @@ import User from "../model/userSchema"
 import jwt from "jsonwebtocken";
 import bcrypt from "bcrypt"
 import {signupSchema,loginSchema} from "../validators/userValidator.js"
+import Chat from "../model/chatSchema.js"
+import Message from "../model/messageSchema.js"
 
 // login
 // logout
@@ -180,20 +182,41 @@ export const profile = async (req,res)=>{
     }
 }
 
-export const deleteAccount = async(req,res)=>{
+export const deleteAccount = async (req,res)=>{
     try{
+        
+        // find all the chatID which belong to user
 
-        // find all the chatId which belongs to the user
+        // Delete all the messages which belongs to the chatID: Messages Delete
+        // Delete all the chatID which belong to this user: Delete wo ChatID; user belong
+        // Delete user Profile: is user By its ID
+    const userId = req.user._id;
 
-        // Delete all the messages which belongs to the chatId:Message delete
-        // Delete all the chatId which belongs to this user
-        // Delete user Profile
 
+    await Message.deleteMany({
+      userId
+    });
+
+    await Chat.deleteMany({
+      userId
+    });
+
+    await User.deleteOne({
+      _id: userId
+    });
+
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: false,
+    });
+
+    res.status(200).json({
+      message: "Account deleted successfully"
+    });
     }
     catch(err){
-        console.log(err);
         res.status(500).json({
-            message:"Internal server error"
-        });
+            messages: "Internal Server Error"
+        })
     }
-};
+}
