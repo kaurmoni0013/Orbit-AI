@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken'
+import jwt from "jsonwebtoken";
 import User from '../model/userSchema.js';
 
 const authUserMiddleware = async(req,res,next)=>{
@@ -6,7 +6,13 @@ const authUserMiddleware = async(req,res,next)=>{
 
         const {tocken} = req.cookies;
 
-        const payload = JsonWebTokenError.verify(tocken,process.env.JWT_SECRET);
+        if(!tocken){
+            res.status(401).json({
+                message:"You need to login first"
+            })
+        }
+
+        const payload = jwt.verify(tocken,process.env.JWT_SECRET);
 
         const existingUser = await User.findById(payload.id);
 

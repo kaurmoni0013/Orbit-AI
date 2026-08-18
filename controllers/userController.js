@@ -1,5 +1,5 @@
-import User from "../model/userSchema"
-import jwt from "jsonwebtocken";
+import User from "../model/userSchema.js"
+import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt"
 import {signupSchema,loginSchema} from "../validators/userValidator.js"
 import Chat from "../model/chatSchema.js"
