@@ -15,6 +15,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use("/user", userRouter);
 app.use("/chat",chatRouter);
+app.use("/msg", messageRouter);
 
 // https://strikes.in/chat/getRecentChat
 // https://strikes.in/user/login

@@ -1,6 +1,7 @@
 
 import Chat from "../model/chatSchema.js";
 import Message from "../model/messageSchema.js";
+import mongoose from "mongoose";
 // getMessage , sendMessage
 
 export const getMessage = async(req,res)=>{
@@ -10,9 +11,9 @@ export const getMessage = async(req,res)=>{
 
         // verify that this chatId belongs to this user or not
 
-        const chat = await chatId.findOne({
+        const chat = await Chat.findOne({
             _id:chatId,
-            userId:req.user_id
+            userId:req.user._id
         });
         if(!chat){
             return res.status(404).json({
@@ -92,7 +93,8 @@ export const sendMessage = async (req, res) => {
     const userMessage = await Message.create({
       chatId: chat._id,
       role: "user",
-      content: content.trim()
+      content: content.trim(),
+      userId:req.user._id
     });
 
     // 5. Dummy AI reply for now
@@ -103,7 +105,8 @@ export const sendMessage = async (req, res) => {
     const assistantMessage = await Message.create({
       chatId: chat._id,
       role: "assistant",
-      content: aiReply
+      content: aiReply,
+      userId:req.user._id
     });
 
     // 7. Update chat metadata
@@ -125,6 +128,7 @@ export const sendMessage = async (req, res) => {
     });
 
   } catch (err) {
+    console.log(err);
     res.status(500).json({
       message: "Internal server error"
     });
