@@ -2,6 +2,7 @@
 import Chat from "../model/chatSchema.js";
 import Message from "../model/messageSchema.js";
 import mongoose from "mongoose";
+import openRouter from "../config/openRouter.js";
 // getMessage , sendMessage
 
 export const getMessage = async(req,res)=>{
@@ -99,7 +100,9 @@ export const sendMessage = async (req, res) => {
 
     // 5. Dummy AI reply for now
     // Later we will replace this with OpenRouter response
-    const aiReply = "AI reply will come here later.";
+    // Messages prepare: history store rakhna padaga,DB
+    // Summary create karni padagi...
+    const aiReply = await chatWithAI({});
 
     // 6. Save assistant message
     const assistantMessage = await Message.create({
