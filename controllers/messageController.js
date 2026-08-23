@@ -1,44 +1,57 @@
-
 import Chat from "../model/chatSchema.js";
 import Message from "../model/messageSchema.js";
 import mongoose from "mongoose";
-import openRouter from "../config/openRouter.js";
-// getMessage , sendMessage
+import {generateAIResponse} from "../service/openRouterService.js"
+import {buildMessagesForAI} from "../utils/chatContext.js"
+import { updateSummaryIfNeeded } from "../service/summaryService.js";
+import {
+  resetUsageIfNeeded,
+  hasTokenLimitReached,
+  addUserTokenUsage,
+} from "../utils/userUsage.js";
+import { addChatTokenUsage } from "../utils/tokenUsage.js";
+
+
+// getMessage, sendMessage
 
 export const getMessage = async(req,res)=>{
     try{
 
         const {chatId} = req.params;
 
-        // verify that this chatId belongs to this user or not
-
+        // verfiy that this chatID belongs to this user or not
+        
         const chat = await Chat.findOne({
-            _id:chatId,
-            userId:req.user._id
+            _id: chatId,
+            userId: req.user._id
         });
+
+
         if(!chat){
             return res.status(404).json({
-                message:"Chat not found"
+                messages: "Chat Not found"
             });
         }
 
-        const message = await Message.find({
+
+        const messages = await Message.find({
             chatId: chatId
-        }).sort({createdAt: 1});
+        }).sort({createdAt:1});
 
         res.status(200).json({
-          message:"Your all messages are here" ,
-          msg: message, 
-        })
-
+            messages: "Your are all messages are here",
+            msg: messages
+        });
     }
     catch(err){
         console.log(err);
         res.status(500).json({
-            message:"Internal server error"
+            messages: "Internal server error"
         })
     }
 }
+
+
 
 export const sendMessage = async (req, res) => {
   try {
@@ -49,6 +62,15 @@ export const sendMessage = async (req, res) => {
     if (!content || content.trim() === "") {
       return res.status(400).json({
         message: "Message content is required"
+      });
+    }
+
+    await resetUsageIfNeeded(req.user);
+
+    if (hasTokenLimitReached(req.user)) {
+      return res.status(429).json({
+        message: "Token limit reached. Please try after some time.",
+        usage: req.user.usage,
       });
     }
 
@@ -86,50 +108,65 @@ export const sendMessage = async (req, res) => {
       chat = await Chat.create({
         userId: req.user._id,
         model,
-        topic: content.trim().slice(0, 40)
+        topic: content.trim().slice(0, 40),
       });
     }
 
-    // 4. Save user message
+    
+
+    // our code start here
+    // oldMessages: Jinki abhi tak summary create nahi hui hai
+    const oldMessages = await Message.find({
+      chatId: chat._id,
+    })
+      .sort({ createdAt: 1 })
+      .skip(chat.summarizedTillMessageNumber);
+
+    const messagesForAI = buildMessagesForAI({
+      chat,
+      oldMessages,
+      currentMessage: content.trim(),
+    });
+
+    const { aiReply, usage } = await generateAIResponse({
+      model: chat.model,
+      messages: messagesForAI,
+    });
+
     const userMessage = await Message.create({
       chatId: chat._id,
       role: "user",
       content: content.trim(),
-      userId:req.user._id
+      userId: req.user._id
     });
 
-    // 5. Dummy AI reply for now
-    // Later we will replace this with OpenRouter response
-    // Messages prepare: history store rakhna padaga,DB
-    // Summary create karni padagi...
-    const aiReply = await chatWithAI({});
-
-    // 6. Save assistant message
     const assistantMessage = await Message.create({
       chatId: chat._id,
       role: "assistant",
       content: aiReply,
-      userId:req.user._id
+       userId: req.user._id,
+       usage,
     });
 
-    // 7. Update chat metadata
     chat.messageCount += 2;
 
-    // If topic is still default, update it from first message
     if (chat.topic === "New Chat") {
       chat.topic = content.trim().slice(0, 40);
     }
 
-    await chat.save();
+    await addChatTokenUsage(chat, usage);
+    await addUserTokenUsage(req.user, usage.totalTokens);
 
-    // 8. Send response
     res.status(201).json({
       message: "Message sent successfully",
       chatId: chat._id,
+      reply: aiReply,
+      usage,
       userMessage,
-      assistantMessage
+      assistantMessage,
     });
 
+    updateSummaryIfNeeded(chat._id);
   } catch (err) {
     console.log(err);
     res.status(500).json({

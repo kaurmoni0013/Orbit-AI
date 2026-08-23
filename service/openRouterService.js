@@ -3,7 +3,7 @@ import openRouter from "../config/openRouter.js";
 export const generateAIResponse = async ({ model, messages }) => {
   const completion = await openRouter.chat.send({
     chatRequest: {
-      model,
+      model, 
       messages,
     },
   });
