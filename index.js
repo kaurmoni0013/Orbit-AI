@@ -9,9 +9,13 @@ import chatRouter from './routes/chatRouter.js';
 
 const app = express();
 
-
+app.use("/",(req,res)=>{
+    res.json("Hello ji");
+})
 app.use(express.json());
 app.use(cookieParser());
+
+
 app.use("/user", userRouter);
 app.use("/chat",chatRouter);
 app.use("/msg", messageRouter);
