@@ -1,12 +1,13 @@
 import express from 'express';
 import dotenv from 'dotenv/config';
+import { connectRedis } from './config/redis.js';
 import connectDB from './config/database.js';
 import userRouter from './routes/userRouter.js';
 import messageRouter from "./routes/messageRouter.js"
 import cookieParser from 'cookie-parser';
 import chatRouter from './routes/chatRouter.js';
 
-
+                                                                                                                                                                                                                                                             
 const app = express();
 
 app.use("/",(req,res)=>{
@@ -30,6 +31,7 @@ const startServer = async ()=>{
 
     try{
         await connectDB();
+        await connectRedis();
 
         app.listen(process.env.PORT,()=>{
         console.log(`Server has Started Listening at port ${process.env.PORT}`)
