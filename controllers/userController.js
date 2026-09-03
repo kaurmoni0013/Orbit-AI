@@ -120,7 +120,10 @@ export const login = async (req,res)=>{
 }
 
 export const logout = async (req,res)=>{ 
-    res.clearCookie("tocken",{
+
+    // redis ka andar token daal do,as block listed tocken
+    // "blocklist:token "
+    res.clearCookie("token",{
         httpOnly:true,
         secure:false,
     });

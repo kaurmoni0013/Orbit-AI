@@ -1,5 +1,5 @@
 import express from 'express';
-import dotenv from 'dotenv/config';
+import 'dotenv/config';
 import { connectRedis } from './config/redis.js';
 import connectDB from './config/database.js';
 import userRouter from './routes/userRouter.js';
@@ -10,9 +10,6 @@ import chatRouter from './routes/chatRouter.js';
                                                                                                                                                                                                                                                              
 const app = express();
 
-app.use("/",(req,res)=>{
-    res.json("Hello ji");
-})
 app.use(express.json());
 app.use(cookieParser());
 
