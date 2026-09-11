@@ -1,7 +1,7 @@
 import Chat from "../model/chatSchema.js";
 import Message from "../model/messageSchema.js";
 import mongoose from "mongoose";
-import {generateAIResponse, streamAIResponse} from "../service/openRouterService.js"
+import {generateAIResponse, streamAIResponse, consumeAIStream} from "../service/openRouterService.js"
 import {buildMessagesForAI} from "../utils/chatContext.js"
 import {
   addUserTokenUsage,
@@ -254,7 +254,26 @@ export const sendMessage = async (req, res) => {
 
 export const streamMessage = async (req, res) => {
   let chat;
+  let stream;
+  let operationTimer;
+  let clientDisconnected = false;
+  const streamController = new AbortController();
+  const onClientDisconnect = () => {
+    clientDisconnected = true;
+    streamController.abort(new Error("Client disconnected"));
+  };
+  const removeConnectionListeners = () => {
+    req.removeListener("aborted", onClientDisconnect);
+    res.removeListener("close", onClientDisconnect);
+  };
+
   try {
+    req.once("aborted", onClientDisconnect);
+    res.once("close", onClientDisconnect);
+    operationTimer = setTimeout(() => {
+      streamController.abort(new Error("AI streaming operation timed out"));
+    }, env.AI_REQUEST_TIMEOUT_MS);
+
     const { chatId } = req.params;
     const { content } = req.body;
     const model = typeof req.body.model === "string" ? req.body.model.trim() : "";
@@ -281,7 +300,14 @@ export const streamMessage = async (req, res) => {
       .sort({ createdAt: 1 })
       .skip(chat.summarizedTillMessageNumber);
     const messages = buildMessagesForAI({ chat, oldMessages, currentMessage: trimmedContent });
-    const stream = await streamAIResponse({ model: chat.model, messages });
+    stream = await streamAIResponse({
+      model: chat.model,
+      messages,
+      signal: streamController.signal,
+    });
+    if (clientDisconnected || streamController.signal.aborted) {
+      throw streamController.signal.reason || new Error("Streaming request aborted");
+    }
     const aiStartedAt = performance.now();
     res.status(200).set({
       "Content-Type": "text/event-stream",
@@ -293,7 +319,13 @@ export const streamMessage = async (req, res) => {
 
     let aiReply = "";
     let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-    for await (const chunk of stream) {
+    await consumeAIStream({
+      stream,
+      signal: streamController.signal,
+      onChunk: async (chunk) => {
+        if (clientDisconnected || streamController.signal.aborted) {
+          throw streamController.signal.reason || new Error("Streaming request aborted");
+        }
       const delta = chunk.choices?.[0]?.delta?.content || "";
       if (delta) {
         aiReply += delta;
@@ -304,9 +336,12 @@ export const streamMessage = async (req, res) => {
         const completionTokens = chunk.usage.completionTokens || 0;
         usage = { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens };
       }
-    }
+      },
+    });
 
-    if (!aiReply) throw new Error("AI response is empty");
+    if (!aiReply || clientDisconnected || streamController.signal.aborted) {
+      throw streamController.signal.reason || new Error("AI response is empty");
+    }
     console.log(JSON.stringify({
       event: "ai.stream.complete",
       requestId: req.requestId,
@@ -331,10 +366,13 @@ export const streamMessage = async (req, res) => {
   } catch (error) {
     console.log("Streaming message error:", error);
     if (chat && !chat.messageCount) await Chat.deleteOne({ _id: chat._id, userId: req.user._id });
-    if (res.headersSent) {
+    if (res.headersSent && !clientDisconnected && !res.destroyed) {
       res.write(`event: error\ndata: ${JSON.stringify({ message: "Unable to complete AI response" })}\n\n`);
       return res.end();
     }
     return res.status(500).json({ message: "Internal server error" });
+  } finally {
+    if (operationTimer) clearTimeout(operationTimer);
+    removeConnectionListeners();
   }
 };

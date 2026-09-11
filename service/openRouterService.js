@@ -10,6 +10,25 @@ const isRetryableError = (error) => {
   return !status || status === 408 || status === 429 || status >= 500;
 };
 
+const abortError = (reason = "Streaming request aborted") => {
+  const error = reason instanceof Error ? reason : new Error(reason);
+  error.code = error.code || "STREAM_ABORTED";
+  return error;
+};
+
+const createAbortPromise = (signal) => {
+  if (!signal) return null;
+  let onAbort;
+  const promise = new Promise((_, reject) => {
+    onAbort = () => reject(abortError(signal.reason));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  return {
+    promise,
+    cleanup: () => signal.removeEventListener("abort", onAbort),
+  };
+};
+
 const requestCompletion = async ({ model, messages }) => {
   const request = openRouter.chat.send({
     chatRequest: {
@@ -28,21 +47,36 @@ const requestCompletion = async ({ model, messages }) => {
   return Promise.race([request, timeout]).finally(() => clearTimeout(timer));
 };
 
-export const streamAIResponse = async ({ model, messages }) => {
+export const streamAIResponse = async ({ model, messages, signal }) => {
   const request = openRouter.chat.send({
     chatRequest: { model, messages, stream: true },
-  });
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error("AI provider request timed out")),
-      env.AI_REQUEST_TIMEOUT_MS
-    );
-  });
+  }, { signal });
+  const aborted = createAbortPromise(signal);
+  if (!aborted) return request;
+  try {
+    return await Promise.race([request, aborted.promise]);
+  } finally {
+    aborted.cleanup();
+  }
+};
 
-  const stream = await Promise.race([request, timeout]);
-  clearTimeout(timer);
-  return stream;
+export const consumeAIStream = async ({ stream, signal, onChunk }) => {
+  const iterator = stream[Symbol.asyncIterator]();
+  const aborted = createAbortPromise(signal);
+  try {
+    while (true) {
+      const nextResult = aborted
+        ? await Promise.race([iterator.next(), aborted.promise])
+        : await iterator.next();
+      if (nextResult.done) return;
+      await onChunk(nextResult.value);
+    }
+  } finally {
+    if (aborted) aborted.cleanup();
+    if (typeof iterator.return === "function") {
+      await iterator.return();
+    }
+  }
 };
 
 export const generateAIResponse = async ({ model, messages, requestId = null }) => {

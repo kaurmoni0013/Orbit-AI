@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import Message from "../model/messageSchema.js";
 import { addUserTokenUsage } from "../utils/userUsage.js";
+import { consumeAIStream } from "../service/openRouterService.js";
 
 test("user token accounting updates window and lifetime totals", async () => {
     const user = {
@@ -30,4 +31,30 @@ test("messages reject content larger than the API limit", async () => {
     const error = await message.validate().catch((validationError) => validationError);
 
     assert.equal(error?.errors.content.kind, "maxlength");
+});
+
+test("stream consumption stops and closes the iterator when aborted", async () => {
+    const controller = new AbortController();
+    let returned = false;
+    const stream = {
+        [Symbol.asyncIterator]() {
+            return {
+                next: () => new Promise(() => {}),
+                return: async () => {
+                    returned = true;
+                    return { done: true };
+                },
+            };
+        },
+    };
+
+    const pending = consumeAIStream({
+        stream,
+        signal: controller.signal,
+        onChunk: async () => {},
+    });
+    controller.abort(new Error("test disconnect"));
+
+    await assert.rejects(pending, { code: "STREAM_ABORTED" });
+    assert.equal(returned, true);
 });
