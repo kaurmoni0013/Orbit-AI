@@ -16,6 +16,7 @@ Orbit Arena is a full-stack AI conversation workspace built with React, Express,
 
 1. Copy `.env.example` to `.env` and fill in MongoDB, Redis, JWT, and OpenRouter values.
    Set `ALLOWED_MODELS` to the comma-separated OpenRouter model IDs that users may select.
+   `AI_REQUEST_TIMEOUT_MS` limits how long the API waits for an AI provider response.
 2. Start the backend:
 
    ```powershell

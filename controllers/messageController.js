@@ -42,13 +42,18 @@ export const getMessage = async(req,res)=>{
         }
 
 
-        const messages = await Message.find({
-            chatId: chatId
-        }).sort({createdAt:1});
+        const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 100);
+        const skip = (page - 1) * limit;
+        const [messages, total] = await Promise.all([
+            Message.find({ chatId }).sort({createdAt:1}).skip(skip).limit(limit),
+            Message.countDocuments({ chatId }),
+        ]);
 
         res.status(200).json({
             messages: "Your are all messages are here",
-            msg: messages
+            msg: messages,
+            pagination: { page, limit, total, pages: Math.ceil(total / limit) }
         });
     }
     catch(err){

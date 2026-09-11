@@ -8,6 +8,7 @@ function AuthScreen({ onAuthenticated }) {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -69,7 +70,8 @@ function App() {
         setUser(profile);
         return loadChats();
       })
-      .catch(() => setUser(null));
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
   }, []);
 
   const selectChat = async (chat) => {
@@ -125,12 +127,17 @@ function App() {
   };
 
   const logout = async () => {
-    await request("/user/logout", { method: "POST" });
-    setUser(null);
-    setActiveChat(null);
-    setMessages([]);
+    try {
+      await request("/user/logout", { method: "POST" });
+      setUser(null);
+      setActiveChat(null);
+      setMessages([]);
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
+  if (loading) return <main className="loading-screen">Loading your arena...</main>;
   if (!user) return <AuthScreen onAuthenticated={(result) => setUser(result)} />;
 
   return (

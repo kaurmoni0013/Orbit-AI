@@ -13,15 +13,20 @@ const allowedModels = new Set(
 // req.user = user ki information hogi// last 20 chats muje fetch karni hai
 
 export const getRecentChat = async(req,res)=>{
-    
     try{
-        
-       const chats =  await Chat.find({userId:req.user._id}).select("topic updatedAt").sort({ updatedAt: -1 })
-      .limit(20);
+       const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+       const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 20, 1), 50);
+       const skip = (page - 1) * limit;
+       const [chats, total] = await Promise.all([
+         Chat.find({userId:req.user._id}).select("topic updatedAt").sort({ updatedAt: -1 })
+           .skip(skip).limit(limit),
+         Chat.countDocuments({ userId: req.user._id }),
+       ]);
 
       res.status(200).json({
         message: "Your all recent chats",
-        chats
+        chats,
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) }
       })
 
     }

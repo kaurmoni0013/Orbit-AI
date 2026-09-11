@@ -3,6 +3,7 @@
 :root { color: #f0f0ea; background: #0b0e0d; font-family: "Space Grotesk", sans-serif; font-synthesis: none; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; background: #0b0e0d; }
+.loading-screen { min-height: 100vh; display: grid; place-items: center; color: #91a097; font: 11px "DM Mono", monospace; letter-spacing: .12em; text-transform: uppercase; }
 button, input, textarea { font: inherit; } button { cursor: pointer; }
 .auth-layout { min-height: 100vh; display: grid; grid-template-columns: 1.1fr .9fr; background: #101513; }
 .brand-panel { position: relative; overflow: hidden; padding: 11vw; display: flex; flex-direction: column; justify-content: center; background: linear-gradient(130deg, #14241d, #101513 60%); }

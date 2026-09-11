@@ -10,6 +10,7 @@ const envSchema = z.object({
     OPENROUTER_API_KEY: z.string().trim().min(1, "OPENROUTER_API_KEY is required"),
     CORS_ORIGINS: z.string().trim().default("http://localhost:5173"),
     ALLOWED_MODELS: z.string().trim().default("openai/gpt-4o-mini"),
+    AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
     TOKEN_LIMIT: z.coerce.number().int().positive().default(10000),
     TOKEN_WINDOW_SECONDS: z.coerce.number().int().positive().default(18000),
 });

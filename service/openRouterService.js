@@ -1,12 +1,18 @@
 import openRouter from "../config/openRouter.js";
+import { env } from "../config/env.js";
 
 export const generateAIResponse = async ({ model, messages }) => {
-  const completion = await openRouter.chat.send({
+  const request = openRouter.chat.send({
     chatRequest: {
       model, 
       messages,
     },
   });
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("AI provider request timed out")), env.AI_REQUEST_TIMEOUT_MS);
+  });
+  const completion = await Promise.race([request, timeout]).finally(() => clearTimeout(timer));
 
   const aiReply = completion.choices[0]?.message?.content;
 
