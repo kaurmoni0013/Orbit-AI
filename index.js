@@ -1,42 +1,35 @@
-import express from 'express';
-import 'dotenv/config';
-import { connectRedis } from './config/redis.js';
-import connectDB from './config/database.js';
-import userRouter from './routes/userRouter.js';
-import messageRouter from "./routes/messageRouter.js"
-import cookieParser from 'cookie-parser';
-import chatRouter from './routes/chatRouter.js';
+import { env } from "./config/env.js";
+import { connectRedis, redisClient } from "./config/redis.js";
+import connectDB from "./config/database.js";
+import mongoose from "mongoose";
+import app from "./app.js";
 
-                                                                                                                                                                                                                                                             
-const app = express();
-
-app.use(express.json());
-app.use(cookieParser());
-
-
-app.use("/user", userRouter);
-app.use("/chat",chatRouter);
-app.use("/msg", messageRouter);
-
-// https://strikes.in/chat/getRecentChat
-// https://strikes.in/user/login
-// https://strikes.in/user/logout
-// https://strikes.in/user/signup
-// https://strikes.in/user/profile
-
-const startServer = async ()=>{
-
-    try{
+const startServer = async () => {
+    try {
         await connectDB();
         await connectRedis();
 
-        app.listen(process.env.PORT,()=>{
-        console.log(`Server has Started Listening at port ${process.env.PORT}`)
-        })
+        const server = app.listen(env.PORT, () => {
+            console.log(`Server has Started Listening at port ${env.PORT}`);
+        });
+
+        const shutdown = async (signal) => {
+            console.log(`${signal} received, shutting down`);
+            server.close(async () => {
+                await redisClient.quit();
+                await mongoose.disconnect();
+                process.exit(0);
+            });
+        };
+
+        process.once("SIGTERM", () => shutdown("SIGTERM"));
+        process.once("SIGINT", () => shutdown("SIGINT"));
+    } catch (error) {
+        console.error("Server startup failed:", error);
+        process.exitCode = 1;
     }
-    catch(err){
-        console.log(err);
-    }
-}
+};
 
 startServer();
+
+export { startServer };

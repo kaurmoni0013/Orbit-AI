@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { redisClient } from "../config/redis.js";
 import User from "../model/userSchema.js";
+import { env } from "../config/env.js";
 
 const authUserMiddleware = async (req, res, next) => {
     try {
@@ -24,7 +25,7 @@ const authUserMiddleware = async (req, res, next) => {
 
         const payload = jwt.verify(
             token,
-            process.env.JWT_SECRET
+            env.JWT_SECRET
         );
 
         const user = await User.findOne({ _id: payload.id });

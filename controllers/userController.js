@@ -5,6 +5,7 @@ import {signupSchema, loginSchema} from "../validators/userValidator.js"
 import Chat from "../model/chatSchema.js"
 import Message from "../model/messageSchema.js"
 import {redisClient} from "../config/redis.js"
+import { env } from "../config/env.js";
 
 // login
 // logout
@@ -13,20 +14,17 @@ import {redisClient} from "../config/redis.js"
 
 const createToken = (id,email)=>{
     
-    if(!process.env.JWT_SECRET){
-        throw new Error("JWT Secret key is Missing");
-    }
-
-    const token =  jwt.sign({id,email}, process.env.JWT_SECRET,{expiresIn:"1h"});
+    const token =  jwt.sign({id,email}, env.JWT_SECRET,{expiresIn:"1h"});
     return token;
 }
 
 
 const cookiesOption = {
     httpOnly: true,
-    secure: false,
+    secure: env.NODE_ENV === "production",
+    sameSite: env.NODE_ENV === "production" ? "strict" : "lax",
     maxAge: 60*60*1000
-}
+};
 
 
 export const signup = async (req,res)=>{

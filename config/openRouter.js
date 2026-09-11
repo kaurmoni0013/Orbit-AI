@@ -1,11 +1,8 @@
 import { OpenRouter } from '@openrouter/sdk';
-
-if (!process.env.OPENROUTER_API_KEY) {
-    throw new Error("Open router API key is missing");
-}
+import { env } from "./env.js";
 
 const openRouter = new OpenRouter({
-    apiKey: process.env.OPENROUTER_API_KEY,
+    apiKey: env.OPENROUTER_API_KEY,
 });
 
 export default openRouter;

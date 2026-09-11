@@ -1,0 +1,32 @@
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+:root { color: #f0f0ea; background: #0b0e0d; font-family: "Space Grotesk", sans-serif; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; background: #0b0e0d; }
+button, input, textarea { font: inherit; } button { cursor: pointer; }
+.auth-layout { min-height: 100vh; display: grid; grid-template-columns: 1.1fr .9fr; background: #101513; }
+.brand-panel { position: relative; overflow: hidden; padding: 11vw; display: flex; flex-direction: column; justify-content: center; background: linear-gradient(130deg, #14241d, #101513 60%); }
+.brand-panel:after { content: "01"; position: absolute; right: 7%; bottom: -6%; color: #b9f23d0b; font: 800 33vw "Barlow Condensed"; line-height: 1; }
+.eyebrow, .sidebar-label, .message-label { color: #91a097; font: 500 11px "DM Mono", monospace; letter-spacing: .16em; }
+.brand-panel h1 { position: relative; z-index: 1; max-width: 680px; margin: 28px 0; color: #f5f4ee; font: 800 clamp(66px, 8vw, 128px)/.82 "Barlow Condensed"; letter-spacing: -.035em; text-transform: uppercase; }
+.brand-panel em { color: #b9f23d; font-style: normal; }
+.brand-panel p { position: relative; z-index: 1; max-width: 390px; color: #9daaa1; line-height: 1.6; }
+.auth-card { width: min(390px, 84%); margin: auto; display: grid; gap: 14px; }
+.card-heading h2 { font-size: 27px; letter-spacing: -.04em; margin: 14px 0 24px; }
+input { width: 100%; border: 1px solid #303c35; border-radius: 3px; background: #151b18; padding: 15px; color: #fff; outline: none; }
+input:focus, textarea:focus { border-color: #b9f23d; }
+.primary-button { display: flex; justify-content: space-between; border: 0; border-radius: 3px; margin-top: 10px; padding: 15px 17px; color: #11180e; background: #b9f23d; font-weight: 700; text-transform: uppercase; }
+.text-button { border: 0; background: none; color: #91a097; font-size: 13px; padding: 10px; }
+.error { color: #ff9b8e; font-size: 13px; margin: 0; }
+.app-shell { min-height: 100vh; display: grid; grid-template-columns: 270px 1fr; background: #0b0e0d; }
+.sidebar { display: flex; flex-direction: column; border-right: 1px solid #27312b; padding: 28px 18px 18px; background: #111714; }
+.logo { color: #e9e7e2; font: 700 23px "Barlow Condensed"; letter-spacing: .02em; margin: 0 10px 42px; text-transform: uppercase; }.logo span { color: #b9f23d; }.logo b { color: #7d8b80; font-weight: 500; }
+.new-chat { border: 1px solid #4e6c39; border-radius: 3px; color: #c9f793; background: #1b2a1a; padding: 12px; text-align: left; }
+.sidebar-label { margin: 34px 10px 12px; font-size: 10px; }
+.chat-list { overflow: auto; }.chat-link { display: block; overflow: hidden; width: 100%; border: 0; border-left: 2px solid transparent; color: #91a097; background: transparent; padding: 11px 10px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }.chat-link:hover, .chat-link.selected { border-left-color: #b9f23d; color: #f0f0ea; background: #1b241e; }
+.account { display: flex; align-items: center; gap: 10px; border-top: 1px solid #27312b; margin-top: auto; padding: 16px 4px 0; }.avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 2px; color: #11180e; background: #b9f23d; font-weight: 700; }.account strong, .account small { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.account strong { font-size: 13px; }.account small { color: #718077; font-size: 11px; margin-top: 2px; }.logout { border: 0; background: none; color: #718077; margin-left: auto; font-size: 20px; }
+.conversation { display: flex; min-width: 0; flex-direction: column; background: radial-gradient(circle at 80% 20%, #17241a 0, transparent 26%); }.topbar { display: flex; justify-content: space-between; border-bottom: 1px solid #27312b; color: #c3c9c3; padding: 24px 5%; font-size: 14px; }.live-mark { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #b9f23d; margin: 0 10px 1px 0; box-shadow: 0 0 12px #b9f23d; }.status-dot { color: #718077; font: 11px "DM Mono", monospace; }.status-dot:first-letter { color: #b9f23d; }
+.message-area { width: min(760px, 90%); flex: 1; margin: 0 auto; padding: 7vh 0 30px; }.empty-state { display: grid; place-items: center; margin-top: 16vh; text-align: center; }.empty-state h1 { margin: 12px 0 8px; color: #f5f4ee; font: 700 52px "Barlow Condensed"; letter-spacing: -.02em; text-transform: uppercase; }.empty-state p:not(.eyebrow) { color: #718077; }.spark { color: #b9f23d; font-size: 42px; }
+.message { margin: 30px 0; line-height: 1.7; }.message p { white-space: pre-wrap; }.message.user { padding-left: 12%; }.message.assistant { padding-right: 8%; }.message-label { font-size: 10px; margin-bottom: 8px; }.typing { color: #91a097; font: 11px "DM Mono"; }.typing span { color: #b9f23d; }
+.composer-wrap { width: min(760px, 90%); margin: 0 auto; padding-bottom: 26px; }.composer-error { margin-bottom: 8px; }.composer { display: flex; gap: 10px; border: 1px solid #445541; border-radius: 3px; background: #151b18; padding: 8px 8px 8px 15px; }.composer textarea { flex: 1; resize: none; border: 0; outline: 0; color: #e9e7e2; background: transparent; line-height: 1.5; padding: 8px 0; }.composer button { align-self: end; width: 34px; height: 34px; border: 0; border-radius: 2px; color: #11180e; background: #b9f23d; font-size: 20px; }.composer button:disabled { cursor: not-allowed; opacity: .35; }.composer-wrap > small { display: block; color: #526057; text-align: center; font-size: 10px; margin-top: 10px; }
+@media (max-width: 720px) { .auth-layout { display: block; }.brand-panel { min-height: 42vh; padding: 50px 9%; }.brand-panel h1 { font-size: 70px; margin: 20px 0; }.auth-card { padding: 42px 0; }.app-shell { display: block; }.sidebar { height: auto; border-right: 0; border-bottom: 1px solid #27312b; padding: 18px; }.logo { margin: 0 0 18px; }.sidebar-label, .chat-list { display: none; }.account { margin-top: 18px; }.new-chat { text-align: center; }.topbar { padding: 18px; }.message-area, .composer-wrap { width: 90%; }.empty-state h1 { font-size: 42px; } }

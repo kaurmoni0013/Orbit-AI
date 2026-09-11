@@ -1,10 +1,13 @@
 {
-  "name": "chatgpt-clone",
+  "name": "orbit-arena-api",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "check": "node --check index.js",
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",
@@ -15,8 +18,10 @@
     "@openrouter/sdk": "^1.2.44",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.2",
     "redis": "^6.2.1",

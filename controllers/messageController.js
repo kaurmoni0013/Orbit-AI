@@ -9,6 +9,7 @@ import {
 import { addChatTokenUsage } from "../utils/tokenUsage.js";
 import {updateSummaryIfNeeded} from "../service/summaryService.js"
 import {redisClient} from "../config/redis.js"
+import { env } from "../config/env.js";
 
 
 // getMessage, sendMessage
@@ -162,7 +163,7 @@ export const sendMessage = async (req, res) => {
     if (tokenUsageTtl === -1) {
       await redisClient.expire(
         req.tokenUsageKey,
-        Number(process.env.TOKEN_WINDOW_SECONDS)
+        env.TOKEN_WINDOW_SECONDS
       );
     }
 
@@ -174,7 +175,7 @@ export const sendMessage = async (req, res) => {
       reply: aiReply,
       usage,
       tokenUsed,
-      tokenLimit: Number(process.env.TOKEN_LIMIT),
+      tokenLimit: env.TOKEN_LIMIT,
       userMessage,
       assistantMessage
     });

@@ -2,5 +2,5 @@ node_modules
 client/node_modules
 client/dist
 .env
-statusCode.txt
-credential.md
+.git
+*.log
