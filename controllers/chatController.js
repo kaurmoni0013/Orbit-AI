@@ -22,7 +22,7 @@ export const getRecentChat = async(req,res)=>{
     catch(err){
         console.log(err);
         res.status(500).json({
-            message: "Interna server error"
+            message: "Internal server error"
         })
     }
 }
@@ -36,7 +36,7 @@ export const getSingleChat = async(req,res)=>{
 
         if(!chat){
             return res.status(404).json({
-                messages: "Sorry data not found"
+                message: "Sorry data not found"
             })
         }
 
@@ -50,7 +50,7 @@ export const getSingleChat = async(req,res)=>{
     catch(err){
         console.log(err);
         res.status(500).json({
-            message: "Interna server error"
+            message: "Internal server error"
         })
     }
 }
@@ -63,7 +63,7 @@ export const createChat = async(req,res)=>{
         // opus4.8 , sol4.2 , fkljhewqoi
         if(!model){
             return res.status(400).json({
-                messages: "Model name is missing"
+                message: "Model name is missing"
             })
         }
 
@@ -88,7 +88,7 @@ export const createChat = async(req,res)=>{
     catch(err){
         console.log(err);
         res.status(500).json({
-            message: "Interna server error"
+            message: "Internal server error"
         })
     }
 }
@@ -123,7 +123,7 @@ export const deleteChat = async(req,res)=>{
     catch(err){
         console.log(err);
         res.status(500).json({
-            message: "Interna server error"
+            message: "Internal server error"
         })
     }
 }

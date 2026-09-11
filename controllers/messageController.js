@@ -3,13 +3,12 @@ import Message from "../model/messageSchema.js";
 import mongoose from "mongoose";
 import {generateAIResponse} from "../service/openRouterService.js"
 import {buildMessagesForAI} from "../utils/chatContext.js"
-import { updateSummaryIfNeeded } from "../service/summaryService.js";
 import {
-  resetUsageIfNeeded,
-  hasTokenLimitReached,
   addUserTokenUsage,
 } from "../utils/userUsage.js";
 import { addChatTokenUsage } from "../utils/tokenUsage.js";
+import {updateSummaryIfNeeded} from "../service/summaryService.js"
+import {redisClient} from "../config/redis.js"
 
 
 // getMessage, sendMessage
@@ -65,14 +64,9 @@ export const sendMessage = async (req, res) => {
       });
     }
 
-    await resetUsageIfNeeded(req.user);
 
-    if (hasTokenLimitReached(req.user)) {
-      return res.status(429).json({
-        message: "Token limit reached. Please try after some time.",
-        usage: req.user.usage,
-      });
-    }
+
+    
 
     let chat;
 
@@ -157,13 +151,32 @@ export const sendMessage = async (req, res) => {
     await addChatTokenUsage(chat, usage);
     await addUserTokenUsage(req.user, usage.totalTokens);
 
-    res.status(201).json({
+    // redis ke andar information ko daalna padega
+
+    const tokenUsed = await redisClient.incrBy(
+        req.tokenUsageKey,
+        usage.totalTokens
+    );
+
+    const tokenUsageTtl = await redisClient.ttl(req.tokenUsageKey);
+    if (tokenUsageTtl === -1) {
+      await redisClient.expire(
+        req.tokenUsageKey,
+        Number(process.env.TOKEN_WINDOW_SECONDS)
+      );
+    }
+
+
+
+    return res.status(201).json({
       message: "Message sent successfully",
       chatId: chat._id,
       reply: aiReply,
       usage,
+      tokenUsed,
+      tokenLimit: Number(process.env.TOKEN_LIMIT),
       userMessage,
-      assistantMessage,
+      assistantMessage
     });
 
     updateSummaryIfNeeded(chat._id);

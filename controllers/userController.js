@@ -1,189 +1,250 @@
-import User from "../model/userSchema.js"
-import jwt from "jsonwebtoken";
+import User from "../model/userSchema.js";
+import jwt from "jsonwebtoken"
 import bcrypt from "bcrypt"
-import {signupSchema,loginSchema} from "../validators/userValidator.js"
+import {signupSchema, loginSchema} from "../validators/userValidator.js"
 import Chat from "../model/chatSchema.js"
 import Message from "../model/messageSchema.js"
+import {redisClient} from "../config/redis.js"
 
 // login
 // logout
 // signup
-// profile
+// profie
 
-
-const createTocken = (id,email)=>{
-
+const createToken = (id,email)=>{
+    
     if(!process.env.JWT_SECRET){
-        throw new Error("JWT secret key is missing")
+        throw new Error("JWT Secret key is Missing");
     }
-    const tocken = jwt.sign({id,email},process.env.JWT_SECRET,{expiresIn:"1hr"});
-    return tocken;
+
+    const token =  jwt.sign({id,email}, process.env.JWT_SECRET,{expiresIn:"1h"});
+    return token;
 }
 
-const cookieOption = {
+
+const cookiesOption = {
     httpOnly: true,
-    secure:false,
-    maxAge:60*60*1000
+    secure: false,
+    maxAge: 60*60*1000
 }
+
 
 export const signup = async (req,res)=>{
     try{
+       
+        // validate all this data
+        
         const result = signupSchema.safeParse(req.body);
-    if(!result.success){
-        return res.status(400).json({
-            message: result.error.issues[0].message
-        })
-    }
 
-        const {name,age,email,password} = result.data;
-
-        // email exist to nahi karta
-        const user = await User.findOne({email});
-
-        if(user){
-            return res.status(409).json({
-                message: "Email Id already exist"
+        if(!result.success){
+            return res.status(400).json({
+                message: result.error.issues[0].message
             })
         }
 
-        const hashPassword = await bcrypt.hash(password,12);
 
-        const userCreated = await User.create({
-            name,
-            age,
-            email,
-            password:hashPassword
-        });
 
-        // tocken create karna
-        // _id,email
-        const tocken = createTocken(userCreated._id,email);
-        res.cookie("tocken",tocken,cookieOption);
+        const {name, age, email, password} = result.data;
 
-        res.status(201).json({
-            message:"User created Successfully",
-            name,
-            age,
-            email
-        });
+        // https status code
+        //email wala already exist toh nahi karta
+
+       const user = await User.findOne({email});
+       
+       if(user){
+            return res.status(409).json({
+                message: "Email ID already exist"
+            })
+       }
+       
+       
+       const hashPassword = await bcrypt.hash(password,12);
+
+      const userCreated = await User.create({
+        name,
+        age,
+        email,
+        password:hashPassword
+       });
+
+
+       // token create karna padta:
+       // _id, email: payload
+      
+       const token = createToken(userCreated._id, email);
+
+       res.cookie("token",token,cookiesOption);
+
+       res.status(201).json({
+        message:"User created SuccessFully",
+        name,
+        age,
+        email
+       });
+
     }
     catch(err){
         console.log(err);
         res.status(500).json({
-            message:"Internal server error"
+            message: "Internal Server error"
         })
-    }
 
+    }
 }
 
 export const login = async (req,res)=>{
+    
     try{
-
-        const result = loginSchema.safeParse(req.body);
         
-         if(!result.success){
-        return res.status(400).json({
-            message: result.error.issues[0].message
-        })
-    }
-        const{email,password} = result.data;
+       const result = loginSchema.safeParse(req.body);
+       
+        if(!result.success){
+            return res.status(400).json({
+                message: result.error.issues[0].message
+            })
+        }
+       
+
+        const {email, password} = result.data;
+
         
 
         // verify the password
         const existingUser = await User.findOne({email});
 
         if(!existingUser){
-            return res.status(404).json({message:"Invalid Credentials"})
+            return res.status(401).json({message:"Invalide Credentials"})
         }
+        
+        // match the password
 
-        const isMatch = await bcrypt.compare(password,existingUser.password);
-        if(!isMatch){
-            return res.status(401).json({message:"Invalid Credentials"})
-        }
+       const isMatch = await bcrypt.compare(password,existingUser.password);
 
-        const tocken = createTocken(existingUser._id,email);
-        res.cookie("tocken",tocken,cookieOption);
+       if(!isMatch)
+       {
+        return res.status(401).json({message:"Invalide Credentials"})
+       }
+
+       const token = createToken(existingUser._id,email);
+
+        res.cookie("token",token,cookiesOption);
+
         res.status(200).json({
-            message:"User Logged in Successfully",
-            name:existingUser.name,
-            age:existingUser.age,
-            email:existingUser.email,
-            usage:existingUser.usage
+            message:"User Logged in SuccessFully",
+            name: existingUser.name,
+            age: existingUser.age,
+            email: existingUser.email,
+            usage: existingUser.usage
         });
     }
     catch(err){
         console.log(err);
         res.status(500).json({
-            message:"Internal server error"
+            message: "Internal Server Error"
+        });
+    }
+
+}
+
+
+
+export const logout = async (req,res)=>{
+    // logut
+    try{
+
+        if(req.token){
+            const token = req.token;
+            const payload = req.tokenPayload;
+            
+            // millisecond: current: second
+            const currentTime = Math.floor(Date.now() / 1000);
+            const remainingTime = payload.exp - currentTime;
+
+            if (remainingTime > 0) {
+                await redisClient.set(
+                    `blocklist:${token}`,
+                    "blocked",
+                    {
+                        EX: remainingTime
+                    }
+                );
+            }
+        }
+
+        res.clearCookie("token",{
+            httpOnly: true,
+            secure: false,
+        })
+
+        res.status(200).json({
+            message: "User Logged Out Successfully"
+        })
+    }
+    catch(error){
+        return res.status(500).json({
+            message: "Internal Server Error"
         });
     }
 }
 
-export const logout = async (req,res)=>{ 
 
-    // redis ka andar token daal do,as block listed tocken
-    // "blocklist:token "
-    res.clearCookie("token",{
-        httpOnly:true,
-        secure:false,
-    });
-    
-    res.status(200).json({
-        message:"User Logged Out Successfully"
-    });
-}
-
+// profile ko sirf mein dekhu or koi nahi
+// authentciated user:(wo srf apni hi profile ko access kar sakta hai): token hai laadle
 // export const profile = async (req,res)=>{
+//     try{
+        
+//         const {email} = req.body;
 
-    // through this anyone can see my profile
-    // but in chatgpt we can't access other account
-    // try{
-    //     const{email} = req.body;
+//         if(!email){
+//             return res.status(400).json({
+//                 message: "Email is missing"
+//             })
+//         }
 
-    //     if(!email){
-    //         return res.status(400).json({
-    //             message:"Email is missing"
-    //         })
-    //     }
-    //     const existingUser = await User.findOne({email});
+//         const existingUser = await User.findOne({email});
 
-    //     if(!existingUser){
-    //         return res.json(401).json({message:"Invalid Email"})
-    //     }
+//         if(!existingUser){
+//             return res.status(401).json({message:"Invalide Email"})
+//         }
 
-    //     res.status(200).json({
-    //         name:existingUser.name,
-    //         age:existingUser.age,
-    //         usage:existingUser.usage,
-    //         email:existingUser.email
-    //     })
-    // }
-    // catch(err){
-    //     console.log(err);
-    //     res.status(500).json({
-    //         message:"Internal server error"
-    //     })
-    // }
+//         res.status(200).json({
+//             name:existingUser.name,
+//             age: existingUser.age,
+//             usage: existingUser.usage,
+//             email: existingUser.email
+//         })
+//     }
+//     catch(err){
+        
+//         console.log(err);
+//         res.status(500).json({
+//             message: "Internal Server error"
+//         })
 
-    
+//     }
 // }
 
-export const profile = async (req,res)=>{
+export const profile = async(req,res)=>{
     try{
-    res.status(200).json({
+        // profile ki informat send karo
+        // Database ke andar call kari padegi, us user ko search, _id, email
+        res.status(200).json({
             name:req.user.name,
-            age:req.user.age,
-            usage:req.user.usage,
-            email:req.user.email
+            age: req.user.age,
+            usage: req.user.usage,
+            email: req.user.email
         })
+
     }
     catch(err){
+
         console.log(err);
         res.status(500).json({
-            message:"Internal server error"
+            message: "Internal Server error"
         })
     }
 }
+
 
 export const deleteAccount = async (req,res)=>{
     try{
@@ -219,7 +280,7 @@ export const deleteAccount = async (req,res)=>{
     }
     catch(err){
         res.status(500).json({
-            messages: "Internal Server Error"
+                message: "Internal Server Error"
         })
     }
 }
