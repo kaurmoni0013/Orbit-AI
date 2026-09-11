@@ -67,6 +67,7 @@ export const getMessage = async(req,res)=>{
 
 
 export const sendMessage = async (req, res) => {
+  let createdChat;
   try {
     const { chatId } = req.params;
     const { content } = req.body;
@@ -132,6 +133,7 @@ export const sendMessage = async (req, res) => {
         model,
         topic: trimmedContent.slice(0, 40),
       });
+      createdChat = chat;
     }
 
     
@@ -213,6 +215,14 @@ export const sendMessage = async (req, res) => {
       assistantMessage
     });
   } catch (err) {
+    if (createdChat) {
+      await Promise.all([
+        Message.deleteMany({ chatId: createdChat._id }),
+        Chat.deleteOne({ _id: createdChat._id, userId: req.user._id }),
+      ]).catch((cleanupError) => {
+        console.log("Failed to clean up incomplete chat:", cleanupError);
+      });
+    }
     console.log(err);
     res.status(500).json({
       message: "Internal server error"

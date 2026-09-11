@@ -11,6 +11,7 @@ const envSchema = z.object({
     CORS_ORIGINS: z.string().trim().default("http://localhost:5173"),
     ALLOWED_MODELS: z.string().trim().default("openai/gpt-4o-mini"),
     AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+    AI_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(2),
     TOKEN_LIMIT: z.coerce.number().int().positive().default(10000),
     TOKEN_WINDOW_SECONDS: z.coerce.number().int().positive().default(18000),
 });

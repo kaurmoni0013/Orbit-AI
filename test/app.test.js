@@ -49,3 +49,25 @@ test("unknown routes return a consistent JSON error", async () => {
         message: "Route not found: GET /does-not-exist",
     });
 });
+
+test("protected routes reject requests without a session", async () => {
+    const response = await fetch(`${baseUrl}/chat/getRecentChat`);
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), {
+        message: "You need to login first",
+    });
+});
+
+test("invalid JSON returns a client error", async () => {
+    const response = await fetch(`${baseUrl}/user/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{",
+    });
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+        message: "Invalid JSON request body",
+    });
+});
