@@ -3,6 +3,89 @@ import { request, streamRequest } from "./api.js";
 
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
 
+function renderInline(text) {
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={index}>{part.slice(1, -1)}</code>;
+    }
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <em key={index}>{part.slice(1, -1)}</em>;
+    }
+    return <span key={index}>{part}</span>;
+  });
+}
+
+function StructuredMessage({ content }) {
+  const lines = content.split("\n");
+  const blocks = [];
+  let paragraph = [];
+  let list = [];
+  let listType = null;
+  let code = null;
+
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      blocks.push(<p key={`p-${blocks.length}`}>{renderInline(paragraph.join(" "))}</p>);
+      paragraph = [];
+    }
+  };
+  const flushList = () => {
+    if (!list.length) return;
+    const List = listType === "ordered" ? "ol" : "ul";
+    blocks.push(<List key={`list-${blocks.length}`}>{list.map((item, index) => <li key={index}>{renderInline(item)}</li>)}</List>);
+    list = [];
+    listType = null;
+  };
+
+  lines.forEach((line, index) => {
+    if (line.startsWith("```")) {
+      flushParagraph();
+      flushList();
+      if (code === null) {
+        code = [];
+      } else {
+        blocks.push(<pre key={`code-${index}`}><code>{code.join("\n")}</code></pre>);
+        code = null;
+      }
+      return;
+    }
+    if (code !== null) {
+      code.push(line);
+      return;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    const numbered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      const Heading = `h${heading[1].length}`;
+      blocks.push(<Heading key={`h-${index}`}>{renderInline(heading[2])}</Heading>);
+    } else if (bullet || numbered) {
+      flushParagraph();
+      const nextType = numbered ? "ordered" : "unordered";
+      if (listType && listType !== nextType) flushList();
+      listType = nextType;
+      list.push((bullet || numbered)[1]);
+    } else if (!line.trim()) {
+      flushParagraph();
+      flushList();
+    } else {
+      flushList();
+      paragraph.push(line.trim());
+    }
+  });
+
+  if (code !== null) blocks.push(<pre key="code-final"><code>{code.join("\n")}</code></pre>);
+  flushParagraph();
+  flushList();
+  return <div className="structured-message">{blocks}</div>;
+}
+
 function AuthScreen({ onAuthenticated }) {
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({ name: "", age: "", email: "", password: "" });
@@ -168,7 +251,7 @@ function App() {
         <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)}>☰</button><div className="session-title"><i className="live-mark" /><span>{activeChat?.topic || "New session"}</span></div><div className="status-dot"><i /> SYSTEM ONLINE</div></header>
         <div className="message-area">
           {!messages.length && <div className="empty-state"><span className="spark">✦</span><p className="eyebrow">READY WHEN YOU ARE</p><h1>What’s the play?</h1><p>Ask for a game plan, break down a problem, or explore a new idea.</p><div className="prompt-grid"><button onClick={() => setDraft("Help me map out a focused plan for this week.")}>Plan my week <span>↗</span></button><button onClick={() => setDraft("Help me think through a difficult decision.")}>Think it through <span>↗</span></button></div></div>}
-          {messages.map((message, index) => <article className={`message ${message.role}`} key={message._id || index}><div className="message-label"><span className={message.role === "assistant" ? "coach-dot" : "player-dot"} />{message.role === "assistant" ? "ORBIT / COACH" : "YOU / PLAYER"}</div><p>{message.content}{busy && message._id?.startsWith("stream-") && <span className="cursor">▋</span>}</p></article>)}
+          {messages.map((message, index) => <article className={`message ${message.role}`} key={message._id || index}><div className="message-label"><span className={message.role === "assistant" ? "coach-dot" : "player-dot"} />{message.role === "assistant" ? "ORBIT / COACH" : "YOU / PLAYER"}</div>{message.role === "assistant" ? <StructuredMessage content={message.content} /> : <p>{message.content}</p>}{busy && message._id?.startsWith("stream-") && <span className="cursor">▋</span>}</article>)}
         </div>
         <div className="composer-wrap">
           {error && <p className="error composer-error">{error}</p>}
