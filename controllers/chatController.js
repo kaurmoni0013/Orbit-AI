@@ -1,5 +1,11 @@
 import Chat from "../model/chatSchema.js"
 import Message from "../model/messageSchema.js";
+import mongoose from "mongoose";
+import { env } from "../config/env.js";
+
+const allowedModels = new Set(
+  env.ALLOWED_MODELS.split(",").map((model) => model.trim()).filter(Boolean)
+);
 
 // getRecentChat: , getSingleChat , createChat, deleteChat
 //
@@ -32,6 +38,10 @@ export const getSingleChat = async(req,res)=>{
           
         const {chatId} = req.params;
 
+        if (!mongoose.Types.ObjectId.isValid(chatId)) {
+            return res.status(400).json({ message: "Invalid chat id" });
+        }
+
         const chat = await Chat.findOne({_id:chatId, userId: req.user._id});
 
         if(!chat){
@@ -59,15 +69,21 @@ export const getSingleChat = async(req,res)=>{
 export const createChat = async(req,res)=>{
     try{
          
-        const {model} = req.body;
+        const model = typeof req.body.model === "string"
+          ? req.body.model.trim()
+          : "";
         // opus4.8 , sol4.2 , fkljhewqoi
-        if(!model){
+        if(!model || typeof model !== "string"){
             return res.status(400).json({
                 message: "Model name is missing"
             })
         }
 
-        // model name bheja hai ye valid hai ya nahi
+        if (!allowedModels.has(model)) {
+            return res.status(400).json({
+                message: "Unsupported model"
+            });
+        }
         
         const chats = await Chat.create({
             userId: req.user._id,
@@ -97,6 +113,10 @@ export const deleteChat = async(req,res)=>{
     try{
        
         const {chatId} = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(chatId)) {
+             return res.status(400).json({ message: "Invalid chat id" });
+        }
 
        const chat = await Chat.findOne({_id:chatId, userId: req.user._id});
 

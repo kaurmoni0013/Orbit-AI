@@ -21,7 +21,8 @@ const messageSchema = new mongoose.Schema({
 
   content: {
     type: String,
-    required: true
+    required: true,
+    maxlength: 12000
   },
 
   tokens: {

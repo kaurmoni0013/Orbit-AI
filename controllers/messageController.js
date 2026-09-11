@@ -11,6 +11,10 @@ import {updateSummaryIfNeeded} from "../service/summaryService.js"
 import {redisClient} from "../config/redis.js"
 import { env } from "../config/env.js";
 
+const MAX_MESSAGE_LENGTH = 12000;
+const allowedModels = new Set(
+  env.ALLOWED_MODELS.split(",").map((model) => model.trim()).filter(Boolean)
+);
 
 // getMessage, sendMessage
 
@@ -18,6 +22,10 @@ export const getMessage = async(req,res)=>{
     try{
 
         const {chatId} = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(chatId)) {
+            return res.status(400).json({ message: "Invalid chat id" });
+        }
 
         // verfiy that this chatID belongs to this user or not
         
@@ -56,15 +64,23 @@ export const getMessage = async(req,res)=>{
 export const sendMessage = async (req, res) => {
   try {
     const { chatId } = req.params;
-    const { content, model } = req.body;
+    const { content } = req.body;
+    const model = typeof req.body.model === "string"
+      ? req.body.model.trim()
+      : "";
 
-    // 1. Validate message content
-    if (!content || content.trim() === "") {
+    if (typeof content !== "string" || content.trim() === "") {
       return res.status(400).json({
         message: "Message content is required"
       });
     }
 
+    const trimmedContent = content.trim();
+    if (trimmedContent.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).json({
+        message: `Message must be ${MAX_MESSAGE_LENGTH} characters or fewer`
+      });
+    }
 
 
     
@@ -94,16 +110,22 @@ export const sendMessage = async (req, res) => {
 
     // 3. New chat case
     else {
-      if (!model) {
+      if (!model || typeof model !== "string") {
         return res.status(400).json({
           message: "Model is required for new chat"
+        });
+      }
+
+      if (!allowedModels.has(model)) {
+        return res.status(400).json({
+          message: "Unsupported model"
         });
       }
 
       chat = await Chat.create({
         userId: req.user._id,
         model,
-        topic: content.trim().slice(0, 40),
+        topic: trimmedContent.slice(0, 40),
       });
     }
 
@@ -120,7 +142,7 @@ export const sendMessage = async (req, res) => {
     const messagesForAI = buildMessagesForAI({
       chat,
       oldMessages,
-      currentMessage: content.trim(),
+      currentMessage: trimmedContent,
     });
 
     const { aiReply, usage } = await generateAIResponse({
@@ -131,7 +153,7 @@ export const sendMessage = async (req, res) => {
     const userMessage = await Message.create({
       chatId: chat._id,
       role: "user",
-      content: content.trim(),
+      content: trimmedContent,
       userId: req.user._id
     });
 
@@ -154,20 +176,26 @@ export const sendMessage = async (req, res) => {
 
     // redis ke andar information ko daalna padega
 
-    const tokenUsed = await redisClient.incrBy(
-        req.tokenUsageKey,
-        usage.totalTokens
-    );
+    let tokenUsed = req.user.usage.tokenUsed;
+    if (req.tokenUsageKey) {
+      try {
+        tokenUsed = await redisClient.incrBy(
+          req.tokenUsageKey,
+          usage.totalTokens
+        );
 
-    const tokenUsageTtl = await redisClient.ttl(req.tokenUsageKey);
-    if (tokenUsageTtl === -1) {
-      await redisClient.expire(
-        req.tokenUsageKey,
-        env.TOKEN_WINDOW_SECONDS
-      );
+        const tokenUsageTtl = await redisClient.ttl(req.tokenUsageKey);
+        if (tokenUsageTtl === -1) {
+          await redisClient.expire(req.tokenUsageKey, env.TOKEN_WINDOW_SECONDS);
+        }
+      } catch (error) {
+        console.log("Redis token usage update error:", error);
+      }
     }
 
-
+    void updateSummaryIfNeeded(chat._id).catch((error) => {
+      console.log("Conversation summary update error:", error);
+    });
 
     return res.status(201).json({
       message: "Message sent successfully",
@@ -179,8 +207,6 @@ export const sendMessage = async (req, res) => {
       userMessage,
       assistantMessage
     });
-
-    updateSummaryIfNeeded(chat._id);
   } catch (err) {
     console.log(err);
     res.status(500).json({

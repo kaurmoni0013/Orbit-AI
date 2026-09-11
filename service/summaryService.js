@@ -2,6 +2,9 @@ import Chat from "../model/chatSchema.js";
 import Message from "../model/messageSchema.js";
 import User from "../model/userSchema.js";
 import { generateAIResponse } from "./openRouterService.js";
+import { redisClient } from "../config/redis.js";
+import { env } from "../config/env.js";
+import { addUserTokenUsage } from "../utils/userUsage.js";
 
 const SUMMARY_CHUNK_SIZE = 20;
 
@@ -68,8 +71,18 @@ export const updateSummaryIfNeeded = async (chatId) => {
   const user = await User.findById(chat.userId);
 
   if (user) {
-    user.usage.tokenUsed += usage.totalTokens;
-    user.usage.totalTokenUsed += usage.totalTokens;
-    await user.save();
+    await addUserTokenUsage(user, usage.totalTokens);
+  }
+
+  const tokenUsageKey = `token-usage:${chat.userId}`;
+  try {
+    const tokenUsed = await redisClient.incrBy(tokenUsageKey, usage.totalTokens);
+    const ttl = await redisClient.ttl(tokenUsageKey);
+    if (ttl === -1) {
+      await redisClient.expire(tokenUsageKey, env.TOKEN_WINDOW_SECONDS);
+    }
+    return tokenUsed;
+  } catch (error) {
+    console.log("Redis summary token usage update error:", error);
   }
 };

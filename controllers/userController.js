@@ -26,6 +26,14 @@ const cookiesOption = {
     maxAge: 60*60*1000
 };
 
+const clearTokenCookie = (res) => {
+    res.clearCookie("token", {
+        httpOnly: cookiesOption.httpOnly,
+        secure: cookiesOption.secure,
+        sameSite: cookiesOption.sameSite,
+    });
+};
+
 
 export const signup = async (req,res)=>{
     try{
@@ -159,20 +167,21 @@ export const logout = async (req,res)=>{
             const remainingTime = payload.exp - currentTime;
 
             if (remainingTime > 0) {
-                await redisClient.set(
-                    `blocklist:${token}`,
-                    "blocked",
-                    {
-                        EX: remainingTime
-                    }
-                );
+                try {
+                    await redisClient.set(
+                        `blocklist:${token}`,
+                        "blocked",
+                        {
+                            EX: remainingTime
+                        }
+                    );
+                } catch (error) {
+                    console.log("Logout token blocklist error:", error);
+                }
             }
         }
 
-        res.clearCookie("token",{
-            httpOnly: true,
-            secure: false,
-        })
+        clearTokenCookie(res);
 
         res.status(200).json({
             message: "User Logged Out Successfully"
@@ -267,10 +276,7 @@ export const deleteAccount = async (req,res)=>{
       _id: userId
     });
 
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: false,
-    });
+    clearTokenCookie(res);
 
     res.status(200).json({
       message: "Account deleted successfully"

@@ -43,8 +43,13 @@ const authUserMiddleware = async (req, res, next) => {
 
         next();
     } catch (error) {
-        
-        console.log(error);
+        console.log("Authentication error:", error);
+
+        if (error instanceof jwt.JsonWebTokenError) {
+            return res.status(401).json({
+                message: "Please login again"
+            });
+        }
 
         return res.status(500).json({
             message: "Internal server error"
