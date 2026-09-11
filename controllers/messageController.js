@@ -1,7 +1,7 @@
 import Chat from "../model/chatSchema.js";
 import Message from "../model/messageSchema.js";
 import mongoose from "mongoose";
-import {generateAIResponse} from "../service/openRouterService.js"
+import {generateAIResponse, streamAIResponse} from "../service/openRouterService.js"
 import {buildMessagesForAI} from "../utils/chatContext.js"
 import {
   addUserTokenUsage,
@@ -15,6 +15,43 @@ const MAX_MESSAGE_LENGTH = 12000;
 const allowedModels = new Set(
   env.ALLOWED_MODELS.split(",").map((model) => model.trim()).filter(Boolean)
 );
+
+const persistMessagePair = async ({ chat, user, content, aiReply, usage }) => {
+  const session = await mongoose.startSession();
+  let createdMessages;
+  try {
+    try {
+      await session.withTransaction(async () => {
+        createdMessages = await Message.create([
+          { chatId: chat._id, role: "user", content, userId: user._id },
+          { chatId: chat._id, role: "assistant", content: aiReply, userId: user._id, usage },
+        ], { session });
+        chat.messageCount += 2;
+        if (chat.topic === "New Chat") chat.topic = content.slice(0, 40);
+        await addChatTokenUsage(chat, usage, session);
+        await addUserTokenUsage(user, usage.totalTokens, session);
+      });
+    } catch (error) {
+      if (!String(error.message).includes("Transaction numbers are only allowed")) throw error;
+      createdMessages = await Message.create([
+        { chatId: chat._id, role: "user", content, userId: user._id },
+        { chatId: chat._id, role: "assistant", content: aiReply, userId: user._id, usage },
+      ]);
+      try {
+        chat.messageCount += 2;
+        if (chat.topic === "New Chat") chat.topic = content.slice(0, 40);
+        await addChatTokenUsage(chat, usage);
+        await addUserTokenUsage(user, usage.totalTokens);
+      } catch (fallbackError) {
+        await Message.deleteMany({ _id: { $in: createdMessages.map((message) => message._id) } });
+        throw fallbackError;
+      }
+    }
+  } finally {
+    await session.endSession();
+  }
+  return createdMessages;
+};
 
 // getMessage, sendMessage
 
@@ -155,31 +192,16 @@ export const sendMessage = async (req, res) => {
     const { aiReply, usage } = await generateAIResponse({
       model: chat.model,
       messages: messagesForAI,
+      requestId: req.requestId,
     });
 
-    const userMessage = await Message.create({
-      chatId: chat._id,
-      role: "user",
+    const [userMessage, assistantMessage] = await persistMessagePair({
+      chat,
+      user: req.user,
       content: trimmedContent,
-      userId: req.user._id
+      aiReply,
+      usage,
     });
-
-    const assistantMessage = await Message.create({
-      chatId: chat._id,
-      role: "assistant",
-      content: aiReply,
-       userId: req.user._id,
-       usage,
-    });
-
-    chat.messageCount += 2;
-
-    if (chat.topic === "New Chat") {
-      chat.topic = content.trim().slice(0, 40);
-    }
-
-    await addChatTokenUsage(chat, usage);
-    await addUserTokenUsage(req.user, usage.totalTokens);
 
     // redis ke andar information ko daalna padega
 
@@ -227,5 +249,92 @@ export const sendMessage = async (req, res) => {
     res.status(500).json({
       message: "Internal server error"
     });
+  }
+};
+
+export const streamMessage = async (req, res) => {
+  let chat;
+  try {
+    const { chatId } = req.params;
+    const { content } = req.body;
+    const model = typeof req.body.model === "string" ? req.body.model.trim() : "";
+    if (typeof content !== "string" || !content.trim()) {
+      return res.status(400).json({ message: "Message content is required" });
+    }
+    const trimmedContent = content.trim();
+    if (trimmedContent.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).json({ message: `Message must be ${MAX_MESSAGE_LENGTH} characters or fewer` });
+    }
+
+    if (chatId) {
+      if (!mongoose.Types.ObjectId.isValid(chatId)) {
+        return res.status(400).json({ message: "Invalid chat id" });
+      }
+      chat = await Chat.findOne({ _id: chatId, userId: req.user._id });
+      if (!chat) return res.status(404).json({ message: "Chat not found" });
+    } else {
+      if (!allowedModels.has(model)) return res.status(400).json({ message: "Unsupported model" });
+      chat = await Chat.create({ userId: req.user._id, model, topic: trimmedContent.slice(0, 40) });
+    }
+
+    const oldMessages = await Message.find({ chatId: chat._id })
+      .sort({ createdAt: 1 })
+      .skip(chat.summarizedTillMessageNumber);
+    const messages = buildMessagesForAI({ chat, oldMessages, currentMessage: trimmedContent });
+    const stream = await streamAIResponse({ model: chat.model, messages });
+    const aiStartedAt = performance.now();
+    res.status(200).set({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders();
+
+    let aiReply = "";
+    let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content || "";
+      if (delta) {
+        aiReply += delta;
+        res.write(`event: token\ndata: ${JSON.stringify({ content: delta })}\n\n`);
+      }
+      if (chunk.usage) {
+        const promptTokens = chunk.usage.promptTokens || 0;
+        const completionTokens = chunk.usage.completionTokens || 0;
+        usage = { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens };
+      }
+    }
+
+    if (!aiReply) throw new Error("AI response is empty");
+    console.log(JSON.stringify({
+      event: "ai.stream.complete",
+      requestId: req.requestId,
+      model: chat.model,
+      durationMs: Math.round(performance.now() - aiStartedAt),
+      totalTokens: usage.totalTokens,
+    }));
+    await persistMessagePair({ chat, user: req.user, content: trimmedContent, aiReply, usage });
+    if (req.tokenUsageKey) {
+      try {
+        await redisClient.incrBy(req.tokenUsageKey, usage.totalTokens);
+        if (await redisClient.ttl(req.tokenUsageKey) === -1) {
+          await redisClient.expire(req.tokenUsageKey, env.TOKEN_WINDOW_SECONDS);
+        }
+      } catch (error) {
+        console.log("Redis streaming token usage update error:", error);
+      }
+    }
+    void updateSummaryIfNeeded(chat._id).catch((error) => console.log("Conversation summary update error:", error));
+    res.write(`event: done\ndata: ${JSON.stringify({ chatId: chat._id, usage })}\n\n`);
+    return res.end();
+  } catch (error) {
+    console.log("Streaming message error:", error);
+    if (chat && !chat.messageCount) await Chat.deleteOne({ _id: chat._id, userId: req.user._id });
+    if (res.headersSent) {
+      res.write(`event: error\ndata: ${JSON.stringify({ message: "Unable to complete AI response" })}\n\n`);
+      return res.end();
+    }
+    return res.status(500).json({ message: "Internal server error" });
   }
 };

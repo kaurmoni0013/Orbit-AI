@@ -1,21 +1,22 @@
-import { useEffect, useState } from "react";
-import { request } from "./api.js";
+import { useEffect, useRef, useState } from "react";
+import { request, streamRequest } from "./api.js";
 
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
 
 function AuthScreen({ onAuthenticated }) {
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ name: "", age: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   const submit = async (event) => {
     event.preventDefault();
     setError("");
     setBusy(true);
     try {
-      const body = mode === "signup" ? form : { email: form.email, password: form.password };
+      const body = mode === "signup"
+        ? { ...form, age: form.age ? Number(form.age) : undefined }
+        : { email: form.email, password: form.password };
       const result = await request(`/user/${mode}`, { method: "POST", body: JSON.stringify(body) });
       onAuthenticated(result);
     } catch (err) {
@@ -28,24 +29,30 @@ function AuthScreen({ onAuthenticated }) {
   return (
     <main className="auth-layout">
       <section className="brand-panel">
-        <span className="eyebrow">ORBIT ARENA / 01</span>
-        <h1>Train your<br /><em>next move.</em></h1>
-        <p>A sharp AI clubhouse for strategy, creation, and getting the edge on your next challenge.</p>
-      </section>
-      <form className="auth-card" onSubmit={submit}>
-        <div className="card-heading">
-          <span className="eyebrow">{mode === "login" ? "BACK IN THE ARENA" : "JOIN THE ROSTER"}</span>
-          <h2>{mode === "login" ? "Sign in to your workspace" : "Create your workspace"}</h2>
+        <div className="brand-kicker"><span className="brand-mark">✦</span> ORBIT ARENA <span>AI WORKSPACE</span></div>
+        <div className="brand-copy">
+          <p className="eyebrow">YOUR SECOND BRAIN, SHARPENED</p>
+          <h1>Make your<br /><em>next move.</em></h1>
+          <p className="brand-description">A focused AI workspace for strategy, creation, and getting the edge on whatever comes next.</p>
         </div>
-        {mode === "signup" && <input placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />}
-        <input type="email" placeholder="Email address" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-        <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
-        {error && <p className="error">{error}</p>}
-        <button className="primary-button" disabled={busy}>{busy ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"} <span>→</span></button>
-        <button type="button" className="text-button" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}>
-          {mode === "login" ? "New here? Create an account" : "Already have an account? Sign in"}
-        </button>
-      </form>
+        <div className="brand-stats"><span><b>01</b> PRIVATE WORKSPACE</span><span><b>24/7</b> CREATIVE SPARRING</span></div>
+      </section>
+      <section className="auth-side">
+        <div className="auth-card">
+          <div className="auth-topline"><span className="eyebrow">{mode === "login" ? "WELCOME BACK" : "NEW TO ORBIT"}</span><span className="auth-step">0{mode === "login" ? "1" : "2"} / 02</span></div>
+          <h2>{mode === "login" ? "Sign in to your workspace" : "Create your workspace"}</h2>
+          <p className="auth-subtitle">{mode === "login" ? "Pick up exactly where you left off." : "A clear space for your clearest thinking."}</p>
+          <form onSubmit={submit} className="auth-form">
+            {mode === "signup" && <div className="field-row"><label>Full name<input autoComplete="name" placeholder="Ada Lovelace" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label><label>Age <span>(optional)</span><input type="number" min="10" max="100" placeholder="28" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} /></label></div>}
+            <label>Email address<input autoComplete="email" type="email" placeholder="you@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
+            <label>Password<input autoComplete={mode === "login" ? "current-password" : "new-password"} type="password" placeholder="At least 8 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label>
+            {error && <p className="error auth-error">{error}</p>}
+            <button className="primary-button" disabled={busy}>{busy ? "Opening workspace..." : mode === "login" ? "Enter workspace" : "Create workspace"} <span>↗</span></button>
+          </form>
+          <button type="button" className="text-button" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}>{mode === "login" ? "New here? Create an account →" : "Already have an account? Sign in →"}</button>
+          <p className="privacy-note">By continuing, you agree to keep your workspace private and use AI responsibly.</p>
+        </div>
+      </section>
     </main>
   );
 }
@@ -58,27 +65,32 @@ function App() {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const composerRef = useRef(null);
 
   const loadChats = async () => {
-    const result = await request("/chat/getRecentChat");
+    const result = await request("/chat/getRecentChat?limit=50");
     setChats(result.chats || []);
   };
 
   useEffect(() => {
-    request("/user/profile")
-      .then((profile) => {
-        setUser(profile);
-        return loadChats();
-      })
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+    request("/user/profile").then((profile) => {
+      setUser(profile);
+      return loadChats();
+    }).catch(() => setUser(null)).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    composerRef.current?.focus();
+  }, [activeChat]);
 
   const selectChat = async (chat) => {
     setActiveChat(chat);
+    setSidebarOpen(false);
     setError("");
     try {
-      const result = await request(`/msg/${chat._id}`);
+      const result = await request(`/msg/${chat._id}?limit=100`);
       setMessages(result.msg || []);
     } catch (err) {
       setError(err.message);
@@ -89,10 +101,11 @@ function App() {
     setError("");
     try {
       const result = await request("/chat/createChat", { method: "POST", body: JSON.stringify({ model: DEFAULT_MODEL }) });
-      const chat = { _id: result.chatId, topic: result.topic };
+      const chat = { _id: result.chatId, topic: result.topic, model: DEFAULT_MODEL };
       setChats((current) => [chat, ...current]);
       setActiveChat(chat);
       setMessages([]);
+      setSidebarOpen(false);
     } catch (err) {
       setError(err.message);
     }
@@ -105,20 +118,21 @@ function App() {
     setError("");
     const content = draft.trim();
     setDraft("");
+    const assistantId = `stream-${Date.now()}`;
+    setMessages((current) => [...current, { role: "user", content }, { _id: assistantId, role: "assistant", content: "" }]);
     try {
-      const result = await request(activeChat ? `/msg/${activeChat._id}` : "/msg", {
-        method: "POST",
-        body: JSON.stringify({ content, model: DEFAULT_MODEL }),
+      await streamRequest(activeChat ? `/msg/${activeChat._id}/stream` : "/msg/stream", { content, model: DEFAULT_MODEL }, (eventName, data) => {
+        if (eventName === "token") {
+          setMessages((current) => current.map((message) => message._id === assistantId ? { ...message, content: message.content + data.content } : message));
+        }
+        if (eventName === "done" && !activeChat) {
+          setActiveChat({ _id: data.chatId, topic: content.slice(0, 40), model: DEFAULT_MODEL });
+          loadChats();
+        }
+        if (eventName === "error") throw new Error(data.message);
       });
-      setMessages((current) => [
-        ...current,
-        { role: "user", content },
-        { role: "assistant", content: result.reply },
-      ]);
-      if (!activeChat) {
-        await loadChats();
-      }
     } catch (err) {
+      setMessages((current) => current.filter((message) => message._id !== assistantId));
       setError(err.message);
       setDraft(content);
     } finally {
@@ -129,43 +143,37 @@ function App() {
   const logout = async () => {
     try {
       await request("/user/logout", { method: "POST" });
-      setUser(null);
-      setActiveChat(null);
-      setMessages([]);
+      setUser(null); setActiveChat(null); setMessages([]);
     } catch (err) {
       setError(err.message);
     }
   };
 
-  if (loading) return <main className="loading-screen">Loading your arena...</main>;
+  if (loading) return <main className="loading-screen"><span className="brand-mark">✦</span><p>Preparing your workspace...</p></main>;
   if (!user) return <AuthScreen onAuthenticated={(result) => setUser(result)} />;
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="logo"><span>✦</span> orbit <b>arena</b></div>
-        <button className="new-chat" onClick={newChat}>＋ Start a session</button>
-        <p className="sidebar-label">MATCH HISTORY</p>
+      {sidebarOpen && <button className="scrim" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
+      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        <div className="logo"><span className="brand-mark">✦</span> orbit <b>arena</b></div>
+        <button className="new-chat" onClick={newChat}><span>＋</span> New session <kbd>⌘ K</kbd></button>
+        <div className="sidebar-heading"><span>RECENT SESSIONS</span><span>{chats.length}</span></div>
         <div className="chat-list">
-          {chats.map((chat) => <button className={`chat-link ${activeChat?._id === chat._id ? "selected" : ""}`} key={chat._id} onClick={() => selectChat(chat)}>{chat.topic || "New conversation"}</button>)}
+          {chats.length ? chats.map((chat) => <button className={`chat-link ${activeChat?._id === chat._id ? "selected" : ""}`} key={chat._id} onClick={() => selectChat(chat)}><span className="chat-icon">◌</span><span>{chat.topic || "New conversation"}</span></button>) : <p className="sidebar-empty">Your sessions will appear here.</p>}
         </div>
-        <div className="account">
-          <div className="avatar">{user.name?.[0]?.toUpperCase() || "U"}</div>
-          <div><strong>{user.name}</strong><small>{user.email}</small></div>
-          <button className="logout" onClick={logout}>↪</button>
-        </div>
+        <div className="sidebar-bottom"><div className="account"><div className="avatar">{user.name?.[0]?.toUpperCase() || "U"}</div><div><strong>{user.name}</strong><small>{user.email}</small></div></div><button className="logout" onClick={logout}>Sign out <span>↗</span></button></div>
       </aside>
       <section className="conversation">
-        <header className="topbar"><span><i className="live-mark" />{activeChat?.topic || "Warm-up session"}</span><span className="status-dot">● SYSTEM ONLINE</span></header>
+        <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)}>☰</button><div className="session-title"><i className="live-mark" /><span>{activeChat?.topic || "New session"}</span></div><div className="status-dot"><i /> SYSTEM ONLINE</div></header>
         <div className="message-area">
-          {!messages.length && <div className="empty-state"><span className="spark">✦</span><p className="eyebrow">READY WHEN YOU ARE</p><h1>What’s the play?</h1><p>Ask for a game plan, break down a problem, or explore a new idea.</p></div>}
-          {messages.map((message, index) => <article className={`message ${message.role}`} key={message._id || index}><div className="message-label">{message.role === "assistant" ? "ORBIT / COACH" : "YOU / PLAYER"}</div><p>{message.content}</p></article>)}
-          {busy && <div className="typing">ORBIT IS DRAWING UP THE PLAY<span>...</span></div>}
+          {!messages.length && <div className="empty-state"><span className="spark">✦</span><p className="eyebrow">READY WHEN YOU ARE</p><h1>What’s the play?</h1><p>Ask for a game plan, break down a problem, or explore a new idea.</p><div className="prompt-grid"><button onClick={() => setDraft("Help me map out a focused plan for this week.")}>Plan my week <span>↗</span></button><button onClick={() => setDraft("Help me think through a difficult decision.")}>Think it through <span>↗</span></button></div></div>}
+          {messages.map((message, index) => <article className={`message ${message.role}`} key={message._id || index}><div className="message-label"><span className={message.role === "assistant" ? "coach-dot" : "player-dot"} />{message.role === "assistant" ? "ORBIT / COACH" : "YOU / PLAYER"}</div><p>{message.content}{busy && message._id?.startsWith("stream-") && <span className="cursor">▋</span>}</p></article>)}
         </div>
         <div className="composer-wrap">
           {error && <p className="error composer-error">{error}</p>}
-          <form className="composer" onSubmit={sendMessage}><textarea value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Message Orbit..." rows="1" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><button disabled={busy || !draft.trim()}>↑</button></form>
-          <small>AI is a co-pilot, not a referee. Check important calls.</small>
+          <form className="composer" onSubmit={sendMessage}><textarea ref={composerRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ask Orbit anything..." rows="1" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><button aria-label="Send message" disabled={busy || !draft.trim()}>↑</button></form>
+          <div className="composer-meta"><span><i /> Orbit can make mistakes. Check important calls.</span><span>↵ send &nbsp; ⇧↵ new line</span></div>
         </div>
       </section>
     </main>

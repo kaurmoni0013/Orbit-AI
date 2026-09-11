@@ -28,7 +28,25 @@ const requestCompletion = async ({ model, messages }) => {
   return Promise.race([request, timeout]).finally(() => clearTimeout(timer));
 };
 
-export const generateAIResponse = async ({ model, messages }) => {
+export const streamAIResponse = async ({ model, messages }) => {
+  const request = openRouter.chat.send({
+    chatRequest: { model, messages, stream: true },
+  });
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error("AI provider request timed out")),
+      env.AI_REQUEST_TIMEOUT_MS
+    );
+  });
+
+  const stream = await Promise.race([request, timeout]);
+  clearTimeout(timer);
+  return stream;
+};
+
+export const generateAIResponse = async ({ model, messages, requestId = null }) => {
+  const startedAt = performance.now();
   let completion;
   for (let attempt = 0; attempt <= env.AI_MAX_RETRIES; attempt += 1) {
     try {
@@ -53,7 +71,7 @@ export const generateAIResponse = async ({ model, messages }) => {
   const promptTokens = completion.usage?.promptTokens || 0;
   const completionTokens = completion.usage?.completionTokens || 0;
 
-  return {
+  const result = {
     aiReply,
     usage: {
       promptTokens,
@@ -61,4 +79,12 @@ export const generateAIResponse = async ({ model, messages }) => {
       totalTokens: promptTokens + completionTokens,
     },
   };
+  console.log(JSON.stringify({
+    event: "ai.response",
+    requestId,
+    model,
+    durationMs: Math.round(performance.now() - startedAt),
+    totalTokens: result.usage.totalTokens,
+  }));
+  return result;
 };

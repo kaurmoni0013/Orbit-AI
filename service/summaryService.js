@@ -58,7 +58,7 @@ export const updateSummaryIfNeeded = async (chatId) => {
     messages: summaryMessages,
   });
 
-  chat.summary = aiReply;
+  chat.summary = aiReply.slice(0, env.AI_SUMMARY_CHAR_LIMIT);
   chat.summaryUpdatedAt = new Date();
   chat.summarizedTillMessageNumber += messagesToSummarize.length;
 

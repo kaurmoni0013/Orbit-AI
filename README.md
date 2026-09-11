@@ -60,4 +60,8 @@ For Docker, set `OPENROUTER_API_KEY` and a random `JWT_SECRET` in the root `.env
 | Chats | `POST /chat/createChat`, `GET /chat/getRecentChat`, `GET /chat/:chatId`, `DELETE /chat/:chatId` |
 | Messages | `POST /msg`, `POST /msg/:chatId`, `GET /msg/:chatId` |
 
+Message streaming is available through `POST /msg/stream` and
+`POST /msg/:chatId/stream`. These return Server-Sent Events and use the same
+cookie authentication and request body as the normal message endpoints.
+
 The browser client uses `credentials: include`; configure `CORS_ORIGINS` to match the deployed frontend origin.
