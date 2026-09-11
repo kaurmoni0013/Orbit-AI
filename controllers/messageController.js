@@ -25,7 +25,7 @@ const persistMessagePair = async ({ chat, user, content, aiReply, usage }) => {
         createdMessages = await Message.create([
           { chatId: chat._id, role: "user", content, userId: user._id },
           { chatId: chat._id, role: "assistant", content: aiReply, userId: user._id, usage },
-        ], { session });
+        ], { session, ordered: true });
         chat.messageCount += 2;
         if (chat.topic === "New Chat") chat.topic = content.slice(0, 40);
         await addChatTokenUsage(chat, usage, session);
