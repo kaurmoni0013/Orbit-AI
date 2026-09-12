@@ -175,6 +175,7 @@ function App() {
   const [retryPrompt, setRetryPrompt] = useState("");
   const composerRef = useRef(null);
   const streamControllerRef = useRef(null);
+  const streamGenerationRef = useRef(0);
 
   const loadChats = async () => {
     const result = await request("/chat/getRecentChat?limit=50");
@@ -189,14 +190,20 @@ function App() {
   useEffect(() => {
     composerRef.current?.focus();
   }, [activeChat]);
-  useEffect(() => () => streamControllerRef.current?.abort(), []);
+  useEffect(() => () => {
+    streamGenerationRef.current += 1;
+    streamControllerRef.current?.abort();
+  }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("orbit-theme", theme);
   }, [theme]);
 
   const selectChat = async (chat) => {
+    streamGenerationRef.current += 1;
     streamControllerRef.current?.abort();
+    streamControllerRef.current = null;
+    setBusy(false);
     setActiveChat(chat);
     setSidebarOpen(false);
     setError("");
@@ -208,7 +215,10 @@ function App() {
     }
   };
   const newChat = async () => {
+    streamGenerationRef.current += 1;
     streamControllerRef.current?.abort();
+    streamControllerRef.current = null;
+    setBusy(false);
     setError("");
     setActiveChat(null);
     setMessages([]);
@@ -269,10 +279,12 @@ function App() {
     const assistantId = `stream-${Date.now()}`;
     const userMessageId = `pending-${Date.now()}`;
     const controller = new AbortController();
+    const generation = ++streamGenerationRef.current;
     streamControllerRef.current = controller;
     setMessages((current) => [...current, { _id: userMessageId, role: "user", content }, { _id: assistantId, role: "assistant", content: "" }]);
     try {
       await streamRequest(activeChat ? `/msg/${activeChat._id}/stream` : "/msg/stream", { content, model: DEFAULT_MODEL }, (eventName, data) => {
+        if (streamGenerationRef.current !== generation) return;
         if (eventName === "token") {
           setMessages((current) => current.map((message) => message._id === assistantId ? { ...message, content: message.content + data.content } : message));
         }
@@ -283,18 +295,27 @@ function App() {
         if (eventName === "error") throw new Error(data.message);
       }, controller.signal);
     } catch (err) {
+      if (streamGenerationRef.current !== generation) return;
       setMessages((current) => current.filter((message) => message._id !== assistantId && message._id !== userMessageId));
       setError(controller.signal.aborted ? "Generation stopped." : err.message);
       setDraft(content);
       setRetryPrompt(content);
     } finally {
-      if (streamControllerRef.current === controller) streamControllerRef.current = null;
-      setBusy(false);
+      if (streamGenerationRef.current === generation) {
+        if (streamControllerRef.current === controller) streamControllerRef.current = null;
+        setBusy(false);
+      }
     }
   };
-  const stopGeneration = () => streamControllerRef.current?.abort(new DOMException("Generation stopped", "AbortError"));
+  const stopGeneration = () => {
+    streamControllerRef.current?.abort(new DOMException("Generation stopped", "AbortError"));
+  };
   const logout = async () => {
     try {
+      streamGenerationRef.current += 1;
+      streamControllerRef.current?.abort();
+      streamControllerRef.current = null;
+      setBusy(false);
       await request("/user/logout", { method: "POST" });
       setUser(null);
       setActiveChat(null);

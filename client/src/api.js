@@ -35,16 +35,20 @@ export async function streamRequest(path, body, onEvent, signal) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      const events = buffer.split("\n\n");
-      buffer = events.pop() || "";
-      for (const rawEvent of events) {
-        const eventName = rawEvent.match(/^event: (.+)$/m)?.[1] || "message";
-        const data = rawEvent.match(/^data: (.+)$/m)?.[1];
-        if (data) onEvent(eventName, JSON.parse(data));
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+        for (const rawEvent of events) {
+          const eventName = rawEvent.match(/^event: (.+)$/m)?.[1] || "message";
+          const data = rawEvent.match(/^data: (.+)$/m)?.[1];
+          if (data) onEvent(eventName, JSON.parse(data));
+        }
+        if (done) break;
       }
-      if (done) break;
+    } finally {
+      await reader.cancel().catch(() => {});
     }
 }
