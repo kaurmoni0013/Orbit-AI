@@ -17,6 +17,7 @@ const envSchema = z.object({
     AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(2048),
     AI_CONTEXT_CHAR_LIMIT: z.coerce.number().int().positive().default(24000),
     AI_SUMMARY_CHAR_LIMIT: z.coerce.number().int().positive().default(6000),
+    SUMMARY_LOCK_TTL_SECONDS: z.coerce.number().int().positive().default(120),
     TOKEN_LIMIT: z.coerce.number().int().positive().default(10000),
     TOKEN_WINDOW_SECONDS: z.coerce.number().int().positive().default(18000),
     AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(20),

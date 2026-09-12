@@ -5,90 +5,96 @@ import { generateAIResponse } from "./openRouterService.js";
 import { redisClient } from "../config/redis.js";
 import { env } from "../config/env.js";
 import { addUserTokenUsage } from "../utils/userUsage.js";
-import { acquireLock, releaseLock } from "../utils/redisOperations.js";
+import { acquireLock, releaseLock, renewLock } from "../utils/redisOperations.js";
 
 const SUMMARY_CHUNK_SIZE = 20;
 
 export const updateSummaryIfNeeded = async (chatId) => {
-  const lock = await acquireLock(`summary-lock:${chatId}`, 120);
+  const lockTtlSeconds = env.SUMMARY_LOCK_TTL_SECONDS;
+  const lock = await acquireLock(`summary-lock:${chatId}`, lockTtlSeconds);
   if (!lock) return;
 
+  const renewalInterval = setInterval(() => {
+    void renewLock(lock, lockTtlSeconds).catch((error) => {
+      console.log("Summary lock renewal error:", error);
+    });
+  }, Math.max(1, Math.floor(lockTtlSeconds / 2)) * 1000);
+
   try {
-  const chat = await Chat.findById(chatId);
+    const chat = await Chat.findById(chatId);
 
-  if (!chat) return;
+    if (!chat) return;
 
-  const unsummarizedCount =
-    chat.messageCount - chat.summarizedTillMessageNumber;
+    const unsummarizedCount =
+      chat.messageCount - chat.summarizedTillMessageNumber;
 
-  if (unsummarizedCount < SUMMARY_CHUNK_SIZE) return;
+    if (unsummarizedCount < SUMMARY_CHUNK_SIZE) return;
 
-  const messagesToSummarize = await Message.find({
-    chatId: chat._id,
-  })
-    .sort({ createdAt: 1 })
-    .skip(chat.summarizedTillMessageNumber)
-    .limit(SUMMARY_CHUNK_SIZE);
+    const messagesToSummarize = await Message.find({
+      chatId: chat._id,
+    })
+      .sort({ createdAt: 1 })
+      .skip(chat.summarizedTillMessageNumber)
+      .limit(SUMMARY_CHUNK_SIZE);
 
-  if (messagesToSummarize.length === 0) return;
+    if (messagesToSummarize.length === 0) return;
 
- 
- const summaryMessages = [
-  {
-    role: "system",
-    content: "Summarize the conversation. Keep important context, user goals, decisions, and unresolved doubts. Do not add extra information."
-  },
+    const summaryMessages = [
+      {
+        role: "system",
+        content: "Summarize the conversation. Keep important context, user goals, decisions, and unresolved doubts. Do not add extra information."
+      },
 
-  {
-    role: "user",
-    content: `Previous summary: ${chat.summary || "No previous summary yet."}`
-  },
+      {
+        role: "user",
+        content: `Previous summary: ${chat.summary || "No previous summary yet."}`
+      },
 
-  ...messagesToSummarize.map((msg) => ({
-    role: msg.role,
-    content: msg.content
-  })),
+      ...messagesToSummarize.map((msg) => ({
+        role: msg.role,
+        content: msg.content
+      })),
 
-  {
-    role: "user",
-    content: "Summarize the above conversation."
-  }
-];
- 
+      {
+        role: "user",
+        content: "Summarize the above conversation."
+      }
+    ];
 
-  const { aiReply, usage } = await generateAIResponse({
-    model: chat.model,
-    messages: summaryMessages,
-  });
+    const { aiReply, usage } = await generateAIResponse({
+      model: chat.model,
+      messages: summaryMessages,
+    });
 
-  chat.summary = aiReply.slice(0, env.AI_SUMMARY_CHAR_LIMIT);
-  chat.summaryUpdatedAt = new Date();
-  chat.summarizedTillMessageNumber += messagesToSummarize.length;
+    chat.summary = aiReply.slice(0, env.AI_SUMMARY_CHAR_LIMIT);
+    chat.summaryUpdatedAt = new Date();
+    chat.summarizedTillMessageNumber += messagesToSummarize.length;
 
-  chat.usage.promptTokens += usage.promptTokens;
-  chat.usage.completionTokens += usage.completionTokens;
-  chat.usage.totalTokens += usage.totalTokens;
+    chat.usage.promptTokens += usage.promptTokens;
+    chat.usage.completionTokens += usage.completionTokens;
+    chat.usage.totalTokens += usage.totalTokens;
 
-  await chat.save();
+    await chat.save();
 
-  const user = await User.findById(chat.userId);
+    const user = await User.findById(chat.userId);
 
-  if (user) {
-    await addUserTokenUsage(user, usage.totalTokens);
-  }
-
-  const tokenUsageKey = `token-usage:${chat.userId}`;
-  try {
-    const tokenUsed = await redisClient.incrBy(tokenUsageKey, usage.totalTokens);
-    const ttl = await redisClient.ttl(tokenUsageKey);
-    if (ttl === -1) {
-      await redisClient.expire(tokenUsageKey, env.TOKEN_WINDOW_SECONDS);
+    if (user) {
+      await addUserTokenUsage(user, usage.totalTokens);
     }
-    return tokenUsed;
-  } catch (error) {
-    console.log("Redis summary token usage update error:", error);
-  }
+
+    const tokenUsageKey = `token-usage:${chat.userId}`;
+    try {
+      const tokenUsed = await redisClient.incrBy(tokenUsageKey, usage.totalTokens);
+      const ttl = await redisClient.ttl(tokenUsageKey);
+      if (ttl === -1) {
+        await redisClient.expire(tokenUsageKey, env.TOKEN_WINDOW_SECONDS);
+      }
+      return tokenUsed;
+    } catch (error) {
+      console.log("Redis summary token usage update error:", error);
+    }
   } finally {
+    clearInterval(renewalInterval);
     await releaseLock(lock);
   }
 };

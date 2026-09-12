@@ -63,3 +63,12 @@ export const releaseLock = async (lock) => {
     arguments: [lock.value],
   });
 };
+
+export const renewLock = async (lock, ttlSeconds) => {
+  if (!lock) return false;
+  const renewed = await redisClient.set(lock.key, lock.value, {
+    XX: true,
+    EX: ttlSeconds,
+  });
+  return renewed === "OK";
+};
