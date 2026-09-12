@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { MongoMemoryReplSet } from "mongodb-memory-server";
 import app from "../app.js";
@@ -189,6 +190,24 @@ test("protected routes reject requests without authentication", async () => {
     const response = await request("/chat/getRecentChat");
     assert.equal(response.status, 401);
     assert.deepEqual(await response.json(), { message: "You need to login first" });
+});
+
+test("invalid JWT cookies are cleared and require a new login", async () => {
+    const staleToken = jwt.sign(
+        { id: new mongoose.Types.ObjectId().toString(), email: "stale@example.com" },
+        "a-different-secret-that-is-not-the-configured-one",
+        { expiresIn: "1h" },
+    );
+
+    const response = await request(
+        "/user/profile",
+        {},
+        `token=${staleToken}`,
+    );
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { message: "Please login again" });
+    assert.match(response.headers.get("set-cookie") || "", /token=;/);
 });
 
 test("users cannot access another user's chat", async () => {
