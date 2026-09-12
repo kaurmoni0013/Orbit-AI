@@ -2,13 +2,20 @@ import openRouter from "../config/openRouter.js";
 import { env } from "../config/env.js";
 
 const sleep = (milliseconds, signal) => new Promise((resolve, reject) => {
-  const timer = setTimeout(resolve, milliseconds);
-  if (!signal) return;
-  const onAbort = () => {
+  let timer;
+  const cleanup = () => {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  };
+  const onAbort = () => {
+    cleanup();
     reject(abortError(signal.reason || "AI request aborted"));
   };
-  signal.addEventListener("abort", onAbort, { once: true });
+  timer = setTimeout(() => {
+    cleanup();
+    resolve();
+  }, milliseconds);
+  signal?.addEventListener("abort", onAbort, { once: true });
 });
 
 const isRetryableError = (error) => {
@@ -28,6 +35,7 @@ const createAbortPromise = (signal) => {
   let onAbort;
   const promise = new Promise((_, reject) => {
     onAbort = () => reject(abortError(signal.reason));
+    if (signal.aborted) onAbort();
     signal.addEventListener("abort", onAbort, { once: true });
   });
   return {
@@ -40,21 +48,32 @@ const requestCompletion = async ({ model, messages, signal }) => {
   const controller = new AbortController();
   const onAbort = () => controller.abort(signal.reason);
   signal?.addEventListener("abort", onAbort, { once: true });
-  const timer = setTimeout(
-    () => controller.abort(new Error("AI provider request timed out")),
-    env.AI_REQUEST_TIMEOUT_MS
-  );
-  const request = openRouter.chat.send({
-    chatRequest: {
-      model,
-      messages,
-      maxTokens: env.AI_MAX_OUTPUT_TOKENS,
-    },
-  }, { signal: controller.signal });
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error("AI provider request timed out");
+      error.code = "AI_REQUEST_TIMEOUT";
+      controller.abort(error);
+      reject(error);
+    }, env.AI_REQUEST_TIMEOUT_MS);
+  });
+  const aborted = createAbortPromise(signal);
   try {
-    return await request;
+    const request = openRouter.chat.send({
+      chatRequest: {
+        model,
+        messages,
+        maxTokens: env.AI_MAX_OUTPUT_TOKENS,
+      },
+    }, { signal: controller.signal });
+    return await Promise.race([
+      request,
+      timeout,
+      ...(aborted ? [aborted.promise] : []),
+    ]);
   } finally {
     clearTimeout(timer);
+    aborted?.cleanup();
     signal?.removeEventListener("abort", onAbort);
   }
 };
