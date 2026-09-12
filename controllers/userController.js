@@ -278,9 +278,12 @@ export const deleteAccount = async (req,res)=>{
           userId
         }, { session });
 
-        await User.deleteOne({
+        const deletedUser = await User.deleteOne({
           _id: userId
         }, { session });
+        if (deletedUser.deletedCount !== 1) {
+          throw new Error("Account deletion did not remove the authenticated user");
+        }
       });
     } finally {
       await session.endSession();

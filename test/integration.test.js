@@ -289,6 +289,54 @@ test("account deletion rolls back chats and messages when user delete fails", as
     assert.equal(await Message.countDocuments({ userId: savedUser._id }), 2);
 });
 
+test("account deletion rolls back when message deletion fails", async () => {
+    const user = await signup("account-message-rollback");
+    await jsonRequest("/msg", {
+        model: MODEL,
+        content: "Keep account data after message failure",
+    }, user.cookie);
+    const originalDeleteMany = Message.deleteMany;
+    Message.deleteMany = async () => {
+        throw new Error("message delete failed");
+    };
+
+    try {
+        const response = await request("/user/delete", { method: "DELETE" }, user.cookie);
+        assert.equal(response.status, 500);
+    } finally {
+        Message.deleteMany = originalDeleteMany;
+    }
+
+    const savedUser = await User.findOne({ email: user.email });
+    assert.ok(savedUser);
+    assert.equal(await Chat.countDocuments({ userId: savedUser._id }), 1);
+    assert.equal(await Message.countDocuments({ userId: savedUser._id }), 2);
+});
+
+test("account deletion rolls back when chat deletion fails", async () => {
+    const user = await signup("account-chat-rollback");
+    await jsonRequest("/msg", {
+        model: MODEL,
+        content: "Keep account data after chat failure",
+    }, user.cookie);
+    const originalDeleteMany = Chat.deleteMany;
+    Chat.deleteMany = async () => {
+        throw new Error("chat delete failed");
+    };
+
+    try {
+        const response = await request("/user/delete", { method: "DELETE" }, user.cookie);
+        assert.equal(response.status, 500);
+    } finally {
+        Chat.deleteMany = originalDeleteMany;
+    }
+
+    const savedUser = await User.findOne({ email: user.email });
+    assert.ok(savedUser);
+    assert.equal(await Chat.countDocuments({ userId: savedUser._id }), 1);
+    assert.equal(await Message.countDocuments({ userId: savedUser._id }), 2);
+});
+
 test("message creation persists the user/assistant pair and usage", async () => {
     const user = await signup("message-user");
     const response = await jsonRequest("/msg", {
