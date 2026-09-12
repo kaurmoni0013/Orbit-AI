@@ -5,10 +5,15 @@ import { generateAIResponse } from "./openRouterService.js";
 import { redisClient } from "../config/redis.js";
 import { env } from "../config/env.js";
 import { addUserTokenUsage } from "../utils/userUsage.js";
+import { acquireLock, releaseLock } from "../utils/redisOperations.js";
 
 const SUMMARY_CHUNK_SIZE = 20;
 
 export const updateSummaryIfNeeded = async (chatId) => {
+  const lock = await acquireLock(`summary-lock:${chatId}`, 120);
+  if (!lock) return;
+
+  try {
   const chat = await Chat.findById(chatId);
 
   if (!chat) return;
@@ -16,9 +21,7 @@ export const updateSummaryIfNeeded = async (chatId) => {
   const unsummarizedCount =
     chat.messageCount - chat.summarizedTillMessageNumber;
 
-  if (unsummarizedCount < SUMMARY_CHUNK_SIZE) {
-    return;
-  }
+  if (unsummarizedCount < SUMMARY_CHUNK_SIZE) return;
 
   const messagesToSummarize = await Message.find({
     chatId: chat._id,
@@ -84,5 +87,8 @@ export const updateSummaryIfNeeded = async (chatId) => {
     return tokenUsed;
   } catch (error) {
     console.log("Redis summary token usage update error:", error);
+  }
+  } finally {
+    await releaseLock(lock);
   }
 };

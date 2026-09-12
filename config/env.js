@@ -11,11 +11,18 @@ const envSchema = z.object({
     CORS_ORIGINS: z.string().trim().default("http://localhost:5173"),
     ALLOWED_MODELS: z.string().trim().default("openai/gpt-4o-mini"),
     AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+    AI_STREAM_FIRST_BYTE_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
+    AI_STREAM_IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
     AI_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(2),
+    AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().default(2048),
     AI_CONTEXT_CHAR_LIMIT: z.coerce.number().int().positive().default(24000),
     AI_SUMMARY_CHAR_LIMIT: z.coerce.number().int().positive().default(6000),
     TOKEN_LIMIT: z.coerce.number().int().positive().default(10000),
     TOKEN_WINDOW_SECONDS: z.coerce.number().int().positive().default(18000),
+    AUTH_RATE_LIMIT: z.coerce.number().int().positive().default(20),
+    AUTH_RATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+    UNAUTH_RATE_LIMIT: z.coerce.number().int().positive().default(10),
+    UNAUTH_RATE_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
 });
 
 const result = envSchema.safeParse(process.env);

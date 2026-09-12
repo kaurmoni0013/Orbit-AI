@@ -17,12 +17,13 @@ export async function request(path, options = {}) {
   return body;
 }
 
-export async function streamRequest(path, body, onEvent) {
+export async function streamRequest(path, body, onEvent, signal) {
     const response = await fetch(`${API_URL}${path}`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal,
     });
 
     if (!response.ok) {

@@ -195,6 +195,9 @@ export const sendMessage = async (req, res) => {
       requestId: req.requestId,
     });
 
+    if (req.reconcileTokenReservation) {
+      await req.reconcileTokenReservation(usage.totalTokens);
+    }
     const [userMessage, assistantMessage] = await persistMessagePair({
       chat,
       user: req.user,
@@ -206,20 +209,8 @@ export const sendMessage = async (req, res) => {
     // redis ke andar information ko daalna padega
 
     let tokenUsed = req.user.usage.tokenUsed;
-    if (req.tokenUsageKey) {
-      try {
-        tokenUsed = await redisClient.incrBy(
-          req.tokenUsageKey,
-          usage.totalTokens
-        );
-
-        const tokenUsageTtl = await redisClient.ttl(req.tokenUsageKey);
-        if (tokenUsageTtl === -1) {
-          await redisClient.expire(req.tokenUsageKey, env.TOKEN_WINDOW_SECONDS);
-        }
-      } catch (error) {
-        console.log("Redis token usage update error:", error);
-      }
+    if (req.reconcileTokenReservation) {
+      tokenUsed = Number(await redisClient.get(req.tokenUsageKey));
     }
 
     void updateSummaryIfNeeded(chat._id).catch((error) => {
@@ -237,6 +228,11 @@ export const sendMessage = async (req, res) => {
       assistantMessage
     });
   } catch (err) {
+    if (req.reconcileTokenReservation && !req.tokenReservationSettled) {
+      await req.reconcileTokenReservation(0).catch((releaseError) => {
+        console.log("Failed to release token reservation:", releaseError);
+      });
+    }
     if (createdChat) {
       await Promise.all([
         Message.deleteMany({ chatId: createdChat._id }),
@@ -256,6 +252,7 @@ export const streamMessage = async (req, res) => {
   let chat;
   let stream;
   let operationTimer;
+  let receivedFirstChunk = false;
   let clientDisconnected = false;
   const streamController = new AbortController();
   const onClientDisconnect = () => {
@@ -270,9 +267,19 @@ export const streamMessage = async (req, res) => {
   try {
     req.once("aborted", onClientDisconnect);
     res.once("close", onClientDisconnect);
-    operationTimer = setTimeout(() => {
-      streamController.abort(new Error("AI streaming operation timed out"));
-    }, env.AI_REQUEST_TIMEOUT_MS);
+    const resetStreamTimer = () => {
+      if (operationTimer) clearTimeout(operationTimer);
+      operationTimer = setTimeout(() => {
+        streamController.abort(new Error(
+          receivedFirstChunk
+            ? "AI stream idle timeout"
+            : "AI stream connection timed out"
+        ));
+      }, receivedFirstChunk
+        ? env.AI_STREAM_IDLE_TIMEOUT_MS
+        : env.AI_STREAM_FIRST_BYTE_TIMEOUT_MS);
+    };
+    resetStreamTimer();
 
     const { chatId } = req.params;
     const { content } = req.body;
@@ -326,6 +333,8 @@ export const streamMessage = async (req, res) => {
         if (clientDisconnected || streamController.signal.aborted) {
           throw streamController.signal.reason || new Error("Streaming request aborted");
         }
+      receivedFirstChunk = true;
+      resetStreamTimer();
       const delta = chunk.choices?.[0]?.delta?.content || "";
       if (delta) {
         aiReply += delta;
@@ -349,22 +358,20 @@ export const streamMessage = async (req, res) => {
       durationMs: Math.round(performance.now() - aiStartedAt),
       totalTokens: usage.totalTokens,
     }));
-    await persistMessagePair({ chat, user: req.user, content: trimmedContent, aiReply, usage });
-    if (req.tokenUsageKey) {
-      try {
-        await redisClient.incrBy(req.tokenUsageKey, usage.totalTokens);
-        if (await redisClient.ttl(req.tokenUsageKey) === -1) {
-          await redisClient.expire(req.tokenUsageKey, env.TOKEN_WINDOW_SECONDS);
-        }
-      } catch (error) {
-        console.log("Redis streaming token usage update error:", error);
-      }
+    if (req.reconcileTokenReservation) {
+      await req.reconcileTokenReservation(usage.totalTokens);
     }
+    await persistMessagePair({ chat, user: req.user, content: trimmedContent, aiReply, usage });
     void updateSummaryIfNeeded(chat._id).catch((error) => console.log("Conversation summary update error:", error));
     res.write(`event: done\ndata: ${JSON.stringify({ chatId: chat._id, usage })}\n\n`);
     return res.end();
   } catch (error) {
     console.log("Streaming message error:", error);
+    if (req.reconcileTokenReservation && !req.tokenReservationSettled) {
+      await req.reconcileTokenReservation(0).catch((releaseError) => {
+        console.log("Failed to release token reservation:", releaseError);
+      });
+    }
     if (chat && !chat.messageCount) await Chat.deleteOne({ _id: chat._id, userId: req.user._id });
     if (res.headersSent && !clientDisconnected && !res.destroyed) {
       res.write(`event: error\ndata: ${JSON.stringify({ message: "Unable to complete AI response" })}\n\n`);

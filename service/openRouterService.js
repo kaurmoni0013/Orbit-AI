@@ -1,11 +1,18 @@
 import openRouter from "../config/openRouter.js";
 import { env } from "../config/env.js";
 
-const sleep = (milliseconds) => new Promise((resolve) => {
-  setTimeout(resolve, milliseconds);
+const sleep = (milliseconds, signal) => new Promise((resolve, reject) => {
+  const timer = setTimeout(resolve, milliseconds);
+  if (!signal) return;
+  const onAbort = () => {
+    clearTimeout(timer);
+    reject(abortError(signal.reason || "AI request aborted"));
+  };
+  signal.addEventListener("abort", onAbort, { once: true });
 });
 
 const isRetryableError = (error) => {
+  if (error?.code === "STREAM_ABORTED") return false;
   const status = error?.status || error?.statusCode;
   return !status || status === 408 || status === 429 || status >= 500;
 };
@@ -29,27 +36,32 @@ const createAbortPromise = (signal) => {
   };
 };
 
-const requestCompletion = async ({ model, messages }) => {
+const requestCompletion = async ({ model, messages, signal }) => {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(signal.reason);
+  signal?.addEventListener("abort", onAbort, { once: true });
+  const timer = setTimeout(
+    () => controller.abort(new Error("AI provider request timed out")),
+    env.AI_REQUEST_TIMEOUT_MS
+  );
   const request = openRouter.chat.send({
     chatRequest: {
       model,
       messages,
+      maxTokens: env.AI_MAX_OUTPUT_TOKENS,
     },
-  });
-  let timer;
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error("AI provider request timed out")),
-      env.AI_REQUEST_TIMEOUT_MS
-    );
-  });
-
-  return Promise.race([request, timeout]).finally(() => clearTimeout(timer));
+  }, { signal: controller.signal });
+  try {
+    return await request;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
 };
 
 export const streamAIResponse = async ({ model, messages, signal }) => {
   const request = openRouter.chat.send({
-    chatRequest: { model, messages, stream: true },
+    chatRequest: { model, messages, stream: true, maxTokens: env.AI_MAX_OUTPUT_TOKENS },
   }, { signal });
   const aborted = createAbortPromise(signal);
   if (!aborted) return request;
@@ -79,18 +91,19 @@ export const consumeAIStream = async ({ stream, signal, onChunk }) => {
   }
 };
 
-export const generateAIResponse = async ({ model, messages, requestId = null }) => {
+export const generateAIResponse = async ({ model, messages, requestId = null, signal }) => {
   const startedAt = performance.now();
   let completion;
   for (let attempt = 0; attempt <= env.AI_MAX_RETRIES; attempt += 1) {
     try {
-      completion = await requestCompletion({ model, messages });
+      completion = await requestCompletion({ model, messages, signal });
       break;
     } catch (error) {
+      if (signal?.aborted) throw abortError(signal.reason);
       if (attempt === env.AI_MAX_RETRIES || !isRetryableError(error)) {
         throw error;
       }
-      await sleep(250 * (2 ** attempt));
+      await sleep(250 * (2 ** attempt), signal);
     }
   }
 

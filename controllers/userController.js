@@ -177,6 +177,9 @@ export const logout = async (req,res)=>{
                     );
                 } catch (error) {
                     console.log("Logout token blocklist error:", error);
+                    return res.status(503).json({
+                        message: "Logout is temporarily unavailable"
+                    });
                 }
             }
         }
@@ -264,17 +267,24 @@ export const deleteAccount = async (req,res)=>{
     const userId = req.user._id;
 
 
-    await Message.deleteMany({
-      userId
-    });
+    const session = await User.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await Message.deleteMany({
+          userId
+        }, { session });
 
-    await Chat.deleteMany({
-      userId
-    });
+        await Chat.deleteMany({
+          userId
+        }, { session });
 
-    await User.deleteOne({
-      _id: userId
-    });
+        await User.deleteOne({
+          _id: userId
+        }, { session });
+      });
+    } finally {
+      await session.endSession();
+    }
 
     clearTokenCookie(res);
 

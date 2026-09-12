@@ -1,37 +1,50 @@
 import { redisClient } from "../config/redis.js";
 import { env } from "../config/env.js";
+import { reserveTokenUsage, adjustTokenUsage } from "../utils/redisOperations.js";
 
 const tokenUsageMiddleware = async (req, res, next) => {
     try {
         const key = `token-usage:${req.userId}`;
 
-        const tokenUsed = await redisClient.get(key);
-        const tokenLimit = env.TOKEN_LIMIT;
-        const tokenWindowSeconds = env.TOKEN_WINDOW_SECONDS;
-
-        if (Number(tokenUsed || 0) >= tokenLimit) {
-            let remainingTime = await redisClient.ttl(key);
-
-            // Repair keys created without an expiry after a previous Redis error.
-            if (remainingTime === -1) {
-                await redisClient.expire(key, tokenWindowSeconds);
-                remainingTime = tokenWindowSeconds;
-            }
-
+        const content = typeof req.body?.content === "string" ? req.body.content.trim() : "";
+        const estimatedTokens = Math.min(
+            env.TOKEN_LIMIT,
+            Math.max(
+                512,
+                Math.ceil(Math.max(content.length, env.AI_CONTEXT_CHAR_LIMIT) / 4) + env.AI_MAX_OUTPUT_TOKENS
+            )
+        );
+        const reservation = await reserveTokenUsage(key, estimatedTokens);
+        if (!reservation.allowed) {
+            const remainingTime = reservation.ttl < 0 ? env.TOKEN_WINDOW_SECONDS : reservation.ttl;
+            res.setHeader("Retry-After", String(Math.max(1, remainingTime)));
             return res.status(429).json({
                 message: "Token limit reached. Please try after some time.",
-                tokenUsed: Number(tokenUsed),
-                tokenLimit,
+                tokenUsed: reservation.tokenUsed,
+                tokenLimit: env.TOKEN_LIMIT,
                 retryAfter: remainingTime
             });
         }
 
         req.tokenUsageKey = key;
+        req.tokenReservation = estimatedTokens;
+        req.tokenReservationSettled = false;
+        req.reconcileTokenReservation = async (actualTokens) => {
+            await adjustTokenUsage(key, actualTokens - estimatedTokens);
+            req.tokenReservationSettled = true;
+        };
+        res.once("finish", () => {
+            if (!req.tokenReservationSettled && res.statusCode >= 400) {
+                void req.reconcileTokenReservation(0).catch((releaseError) => {
+                    console.log("Failed to release token reservation:", releaseError);
+                });
+            }
+        });
 
-        next();
+        return next();
     } catch (error) {
         console.log("Token usage middleware error:", error);
-        next();
+        return res.status(503).json({ message: "Token quota is temporarily unavailable" });
     }
 };
 
