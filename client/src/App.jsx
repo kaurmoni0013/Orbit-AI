@@ -310,6 +310,12 @@ function App() {
   const stopGeneration = () => {
     streamControllerRef.current?.abort(new DOMException("Generation stopped", "AbortError"));
   };
+  const retryLastMessage = () => {
+    if (!retryPrompt || busy) return;
+    const content = retryPrompt;
+    setRetryPrompt("");
+    void sendMessage(null, content);
+  };
   const logout = async () => {
     try {
       streamGenerationRef.current += 1;
@@ -364,7 +370,7 @@ function App() {
           {messages.map((message, index) => <article className={`message ${message.role}`} key={message._id || index}><div className="message-label"><span className={message.role === "assistant" ? "coach-dot" : "player-dot"} />{message.role === "assistant" ? "ORBIT AI" : "YOU"}{busy && message.role === "assistant" && message._id?.startsWith("stream-") && <span className="streaming-indicator" aria-label="Orbit AI is replying"><i /><i /><i /></span>}</div>{message.role === "assistant" ? <StructuredMessage content={message.content} /> : <p>{message.content}</p>}</article>)}
         </div>
         <div className="composer-wrap">
-          {error && <div className="composer-error-actions"><p className="error">{error}</p>{retryPrompt && !busy && <button type="button" className="retry-button" onClick={() => sendMessage(null, retryPrompt)}>Retry</button>}</div>}
+          {error && <div className="composer-error-actions"><p className="error">{error}</p>{retryPrompt && !busy && <button type="button" className="retry-button" onClick={retryLastMessage}>Retry response</button>}</div>}
           <form className="composer" onSubmit={sendMessage}><textarea ref={composerRef} value={draft} onChange={(e) => { setDraft(e.target.value); e.target.style.height = "auto"; e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`; }} placeholder="Message Orbit AI..." rows="1" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><button type={busy ? "button" : "submit"} aria-label={busy ? "Stop generating" : "Send message"} className={busy ? "stop-button" : ""} onClick={busy ? stopGeneration : undefined} disabled={!busy && !draft.trim()}>{busy ? "Stop" : <Icon name="send" size={17} />}</button></form>
           <div className="composer-meta"><span>Orbit AI can make mistakes. Check important information.</span><span>Enter to send · Shift + Enter for new line</span></div>
         </div>
