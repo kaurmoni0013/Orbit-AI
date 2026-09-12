@@ -3,51 +3,67 @@ import { request, streamRequest } from "./api.js";
 
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
 
+function Icon({ name, size = 18 }) {
+  const icons = {
+    arrow: <><path d="M5 12h13M13 6l6 6-6 6" /></>,
+    chevron: <path d="m7 10 5 5 5-5" />,
+    menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
+    plus: <><path d="M12 5v14M5 12h14" /></>,
+    search: <><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></>,
+    send: <><path d="m21 3-7.5 18-3.8-7.7L2 9.5 21 3Z" /><path d="M9.8 13.3 21 3" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2.5V20a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H6v-2.5h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 1.8-1.8.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V5h2.5v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v2.5h-.2a1.7 1.7 0 0 0-1.6 1Z" /></>,
+    spark: <><path d="m12 3 1.5 6.5L20 12l-6.5 1.5L12 20l-1.5-6.5L4 12l6.5-2.5L12 3Z" /></>,
+  };
+  return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icons[name]}</svg>;
+}
+
 function renderInline(text) {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  const parts = text.split(/(`[^`]+`|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|\*[^*]+\*)/g);
   return parts.map((part, index) => {
-    if (part.startsWith("`") && part.endsWith("`")) {
-      return <code key={index}>{part.slice(1, -1)}</code>;
+    const link = part.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/);
+    if (link) {
+      try {
+        const url = new URL(link[2]);
+        if (url.protocol === "http:" || url.protocol === "https:") {
+          return <a key={index} href={url.href} target="_blank" rel="noreferrer">{link[1]}</a>;
+        }
+      } catch {
+        // Keep malformed links as plain text.
+      }
     }
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={index}>{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("*") && part.endsWith("*")) {
-      return <em key={index}>{part.slice(1, -1)}</em>;
-    }
+    if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("*") && part.endsWith("*")) return <em key={index}>{part.slice(1, -1)}</em>;
     return <span key={index}>{part}</span>;
   });
 }
 
 function StructuredMessage({ content }) {
-  const lines = content.split("\n");
   const blocks = [];
-  let paragraph = [];
-  let list = [];
+  const paragraph = [];
+  const list = [];
   let listType = null;
   let code = null;
-
   const flushParagraph = () => {
     if (paragraph.length) {
       blocks.push(<p key={`p-${blocks.length}`}>{renderInline(paragraph.join(" "))}</p>);
-      paragraph = [];
+      paragraph.length = 0;
     }
   };
   const flushList = () => {
     if (!list.length) return;
     const List = listType === "ordered" ? "ol" : "ul";
     blocks.push(<List key={`list-${blocks.length}`}>{list.map((item, index) => <li key={index}>{renderInline(item)}</li>)}</List>);
-    list = [];
+    list.length = 0;
     listType = null;
   };
 
-  lines.forEach((line, index) => {
+  content.split("\n").forEach((line, index) => {
     if (line.startsWith("```")) {
       flushParagraph();
       flushList();
-      if (code === null) {
-        code = [];
-      } else {
+      if (code === null) code = [];
+      else {
         blocks.push(<pre key={`code-${index}`}><code>{code.join("\n")}</code></pre>);
         code = null;
       }
@@ -79,7 +95,6 @@ function StructuredMessage({ content }) {
       paragraph.push(line.trim());
     }
   });
-
   if (code !== null) blocks.push(<pre key="code-final"><code>{code.join("\n")}</code></pre>);
   flushParagraph();
   flushList();
@@ -91,7 +106,6 @@ function AuthScreen({ onAuthenticated }) {
   const [form, setForm] = useState({ name: "", age: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
   const submit = async (event) => {
     event.preventDefault();
     setError("");
@@ -100,40 +114,38 @@ function AuthScreen({ onAuthenticated }) {
       const body = mode === "signup"
         ? { ...form, age: form.age ? Number(form.age) : undefined }
         : { email: form.email, password: form.password };
-      const result = await request(`/user/${mode}`, { method: "POST", body: JSON.stringify(body) });
-      onAuthenticated(result);
+      onAuthenticated(await request(`/user/${mode}`, { method: "POST", body: JSON.stringify(body) }));
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
   };
-
   return (
     <main className="auth-layout">
       <section className="brand-panel">
-        <div className="brand-kicker"><span className="brand-mark">✦</span> ORBIT ARENA <span>AI WORKSPACE</span></div>
+        <div className="brand-kicker"><span className="brand-symbol"><Icon name="spark" size={17} /></span> ORBIT AI <span>INTELLIGENT WORKSPACE</span></div>
         <div className="brand-copy">
-          <p className="eyebrow">YOUR SECOND BRAIN, SHARPENED</p>
-          <h1>Make your<br /><em>next move.</em></h1>
-          <p className="brand-description">A focused AI workspace for strategy, creation, and getting the edge on whatever comes next.</p>
+          <p className="eyebrow">THINK CLEARLY. CREATE FREELY.</p>
+          <h1>Your ideas,<br /><em>in orbit.</em></h1>
+          <p className="brand-description">A calm, intelligent space to explore questions, shape ideas, and turn conversations into momentum.</p>
         </div>
-        <div className="brand-stats"><span><b>01</b> PRIVATE WORKSPACE</span><span><b>24/7</b> CREATIVE SPARRING</span></div>
+        <div className="brand-stats"><span><b>01</b> PRIVATE BY DESIGN</span><span><b>∞</b> ROOM TO EXPLORE</span></div>
       </section>
       <section className="auth-side">
         <div className="auth-card">
-          <div className="auth-topline"><span className="eyebrow">{mode === "login" ? "WELCOME BACK" : "NEW TO ORBIT"}</span><span className="auth-step">0{mode === "login" ? "1" : "2"} / 02</span></div>
-          <h2>{mode === "login" ? "Sign in to your workspace" : "Create your workspace"}</h2>
-          <p className="auth-subtitle">{mode === "login" ? "Pick up exactly where you left off." : "A clear space for your clearest thinking."}</p>
+          <div className="auth-topline"><span className="eyebrow">{mode === "login" ? "WELCOME BACK" : "GET STARTED"}</span><span className="auth-step">ORBIT AI</span></div>
+          <h2>{mode === "login" ? "Welcome back" : "Create your account"}</h2>
+          <p className="auth-subtitle">{mode === "login" ? "Sign in to continue to your intelligent space." : "Start a new space for thinking, making, and exploring."}</p>
           <form onSubmit={submit} className="auth-form">
-            {mode === "signup" && <div className="field-row"><label>Full name<input autoComplete="name" placeholder="Ada Lovelace" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label><label>Age <span>(optional)</span><input type="number" min="10" max="100" placeholder="28" value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} /></label></div>}
+            {mode === "signup" && <label>Full name<input autoComplete="name" placeholder="Your name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>}
             <label>Email address<input autoComplete="email" type="email" placeholder="you@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></label>
-            <label>Password<input autoComplete={mode === "login" ? "current-password" : "new-password"} type="password" placeholder="At least 8 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label>
+            <label>Password<input autoComplete={mode === "login" ? "current-password" : "new-password"} type="password" placeholder="Enter your password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></label>
             {error && <p className="error auth-error">{error}</p>}
-            <button className="primary-button" disabled={busy}>{busy ? "Opening workspace..." : mode === "login" ? "Enter workspace" : "Create workspace"} <span>↗</span></button>
+            <button className="primary-button" disabled={busy}>{busy ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"} <Icon name="arrow" size={17} /></button>
           </form>
-          <button type="button" className="text-button" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}>{mode === "login" ? "New here? Create an account →" : "Already have an account? Sign in →"}</button>
-          <p className="privacy-note">By continuing, you agree to keep your workspace private and use AI responsibly.</p>
+          <button type="button" className="text-button" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); }}>{mode === "login" ? "Don’t have an account? Sign up" : "Already have an account? Sign in"}</button>
+          <p className="privacy-note">Your conversations stay private. Use Orbit AI responsibly.</p>
         </div>
       </section>
     </main>
@@ -150,25 +162,29 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [retryPrompt, setRetryPrompt] = useState("");
   const composerRef = useRef(null);
+  const streamControllerRef = useRef(null);
 
   const loadChats = async () => {
     const result = await request("/chat/getRecentChat?limit=50");
     setChats(result.chats || []);
   };
-
   useEffect(() => {
     request("/user/profile").then((profile) => {
       setUser(profile);
       return loadChats();
     }).catch(() => setUser(null)).finally(() => setLoading(false));
   }, []);
-
   useEffect(() => {
     composerRef.current?.focus();
   }, [activeChat]);
+  useEffect(() => () => streamControllerRef.current?.abort(), []);
 
   const selectChat = async (chat) => {
+    streamControllerRef.current?.abort();
     setActiveChat(chat);
     setSidebarOpen(false);
     setError("");
@@ -179,30 +195,62 @@ function App() {
       setError(err.message);
     }
   };
-
   const newChat = async () => {
+    streamControllerRef.current?.abort();
     setError("");
+    setActiveChat(null);
+    setMessages([]);
+    setRetryPrompt("");
+    setSidebarOpen(false);
+  };
+  const renameChat = async (chat) => {
+    const topic = window.prompt("Rename conversation", chat.topic || "New conversation");
+    if (topic === null || !topic.trim() || topic.trim() === chat.topic) return;
     try {
-      const result = await request("/chat/createChat", { method: "POST", body: JSON.stringify({ model: DEFAULT_MODEL }) });
-      const chat = { _id: result.chatId, topic: result.topic, model: DEFAULT_MODEL };
-      setChats((current) => [chat, ...current]);
-      setActiveChat(chat);
-      setMessages([]);
-      setSidebarOpen(false);
+      const updated = await request(`/chat/${chat._id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ topic: topic.trim() }),
+      });
+      setChats((current) => current.map((item) => item._id === chat._id ? { ...item, topic: updated.topic } : item));
+      setActiveChat((current) => current?._id === chat._id ? { ...current, topic: updated.topic } : current);
     } catch (err) {
       setError(err.message);
     }
   };
-
-  const sendMessage = async (event) => {
-    event.preventDefault();
-    if (!draft.trim() || busy) return;
+  const togglePinChat = async (chat) => {
+    try {
+      const updated = await request(`/chat/${chat._id}/pin`, { method: "POST" });
+      setChats((current) => current.map((item) => item._id === chat._id ? { ...item, pinned: updated.pinned } : item));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  const removeChat = async (chat) => {
+    if (!window.confirm(`Delete "${chat.topic || "New conversation"}"? This cannot be undone.`)) return;
+    try {
+      await request(`/chat/${chat._id}`, { method: "DELETE" });
+      setChats((current) => current.filter((item) => item._id !== chat._id));
+      if (activeChat?._id === chat._id) {
+        setActiveChat(null);
+        setMessages([]);
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  const sendMessage = async (event, requestedContent = null) => {
+    event?.preventDefault();
+    const content = (requestedContent ?? draft).trim();
+    if (!content || busy) return;
     setBusy(true);
     setError("");
-    const content = draft.trim();
+    setRetryPrompt("");
     setDraft("");
     const assistantId = `stream-${Date.now()}`;
-    setMessages((current) => [...current, { role: "user", content }, { _id: assistantId, role: "assistant", content: "" }]);
+    const userMessageId = `pending-${Date.now()}`;
+    const controller = new AbortController();
+    streamControllerRef.current = controller;
+    setMessages((current) => [...current, { _id: userMessageId, role: "user", content }, { _id: assistantId, role: "assistant", content: "" }]);
     try {
       await streamRequest(activeChat ? `/msg/${activeChat._id}/stream` : "/msg/stream", { content, model: DEFAULT_MODEL }, (eventName, data) => {
         if (eventName === "token") {
@@ -213,50 +261,70 @@ function App() {
           loadChats();
         }
         if (eventName === "error") throw new Error(data.message);
-      });
+      }, controller.signal);
     } catch (err) {
-      setMessages((current) => current.filter((message) => message._id !== assistantId));
-      setError(err.message);
+      setMessages((current) => current.filter((message) => message._id !== assistantId && message._id !== userMessageId));
+      setError(controller.signal.aborted ? "Generation stopped." : err.message);
       setDraft(content);
+      setRetryPrompt(content);
     } finally {
+      if (streamControllerRef.current === controller) streamControllerRef.current = null;
       setBusy(false);
     }
   };
-
+  const stopGeneration = () => streamControllerRef.current?.abort(new DOMException("Generation stopped", "AbortError"));
   const logout = async () => {
     try {
       await request("/user/logout", { method: "POST" });
-      setUser(null); setActiveChat(null); setMessages([]);
+      setUser(null);
+      setActiveChat(null);
+      setMessages([]);
     } catch (err) {
       setError(err.message);
     }
   };
 
-  if (loading) return <main className="loading-screen"><span className="brand-mark">✦</span><p>Preparing your workspace...</p></main>;
+  if (loading) return <main className="loading-screen"><span className="brand-symbol large"><Icon name="spark" size={28} /></span><p>Preparing your workspace...</p></main>;
   if (!user) return <AuthScreen onAuthenticated={(result) => setUser(result)} />;
+  const visibleChats = chats.filter((chat) => (chat.topic || "New conversation").toLowerCase().includes(search.toLowerCase()));
 
   return (
     <main className="app-shell">
       {sidebarOpen && <button className="scrim" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-        <div className="logo"><span className="brand-mark">✦</span> orbit <b>arena</b></div>
-        <button className="new-chat" onClick={newChat}><span>＋</span> New session <kbd>⌘ K</kbd></button>
-        <div className="sidebar-heading"><span>RECENT SESSIONS</span><span>{chats.length}</span></div>
+        <div className="logo"><span className="brand-symbol"><Icon name="spark" size={16} /></span> orbit <b>ai</b></div>
+        <button className="new-chat" onClick={newChat}><Icon name="plus" size={17} /> New chat <kbd>⌘ K</kbd></button>
+        <label className="chat-search"><Icon name="search" size={15} /><input aria-label="Search conversations" placeholder="Search conversations" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
+        <div className="sidebar-heading"><span>CONVERSATIONS</span><span>{visibleChats.length}</span></div>
         <div className="chat-list">
-          {chats.length ? chats.map((chat) => <button className={`chat-link ${activeChat?._id === chat._id ? "selected" : ""}`} key={chat._id} onClick={() => selectChat(chat)}><span className="chat-icon">◌</span><span>{chat.topic || "New conversation"}</span></button>) : <p className="sidebar-empty">Your sessions will appear here.</p>}
+          {visibleChats.length ? visibleChats.map((chat) => <div className={`chat-row ${activeChat?._id === chat._id ? "selected" : ""}`} key={chat._id}>
+            <button className="chat-link" onClick={() => selectChat(chat)}><span className="chat-icon"><span /></span><span>{chat.topic || "New conversation"}</span></button>
+            <div className="chat-actions">
+              <button type="button" aria-label={chat.pinned ? "Unpin conversation" : "Pin conversation"} title={chat.pinned ? "Unpin" : "Pin"} onClick={() => togglePinChat(chat)}>{chat.pinned ? "Unpin" : "Pin"}</button>
+              <button type="button" aria-label="Rename conversation" title="Rename" onClick={() => renameChat(chat)}>Rename</button>
+              <button type="button" aria-label="Delete conversation" title="Delete" onClick={() => removeChat(chat)}>Delete</button>
+            </div>
+          </div>) : <p className="sidebar-empty">{search ? "No matching conversations." : "Your conversations will appear here."}</p>}
         </div>
-        <div className="sidebar-bottom"><div className="account"><div className="avatar">{user.name?.[0]?.toUpperCase() || "U"}</div><div><strong>{user.name}</strong><small>{user.email}</small></div></div><button className="logout" onClick={logout}>Sign out <span>↗</span></button></div>
+        <div className="sidebar-bottom">
+          <div className="account">
+            <div className="avatar">{user.name?.[0]?.toUpperCase() || "U"}</div>
+            <div className="account-copy"><strong>{user.name}</strong><small>{user.email}</small></div>
+            <button className="icon-button" aria-label="Open account menu" onClick={() => setProfileOpen((open) => !open)}><Icon name="chevron" size={15} /></button>
+          </div>
+          {profileOpen && <div className="profile-popover"><div><strong>{user.name}</strong><small>{user.email}</small></div><button className="popover-action"><Icon name="settings" size={15} /> Settings</button><button className="popover-action danger" onClick={logout}><Icon name="logout" size={15} /> Sign out</button></div>}
+        </div>
       </aside>
       <section className="conversation">
-        <header className="topbar"><button className="mobile-menu" onClick={() => setSidebarOpen(true)}>☰</button><div className="session-title"><i className="live-mark" /><span>{activeChat?.topic || "New session"}</span></div><div className="status-dot"><i /> SYSTEM ONLINE</div></header>
+        <header className="topbar"><button className="mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Icon name="menu" size={20} /></button><div className="topbar-brand"><span className="brand-symbol"><Icon name="spark" size={15} /></span><strong>Orbit AI</strong></div><div className="session-title"><span>{activeChat?.topic || "New conversation"}</span><small>{activeChat ? "Conversation" : "Ready when you are"}</small></div><div className="status-dot"><i /> ONLINE</div></header>
         <div className="message-area">
-          {!messages.length && <div className="empty-state"><span className="spark">✦</span><p className="eyebrow">READY WHEN YOU ARE</p><h1>What’s the play?</h1><p>Ask for a game plan, break down a problem, or explore a new idea.</p><div className="prompt-grid"><button onClick={() => setDraft("Help me map out a focused plan for this week.")}>Plan my week <span>↗</span></button><button onClick={() => setDraft("Help me think through a difficult decision.")}>Think it through <span>↗</span></button></div></div>}
-          {messages.map((message, index) => <article className={`message ${message.role}`} key={message._id || index}><div className="message-label"><span className={message.role === "assistant" ? "coach-dot" : "player-dot"} />{message.role === "assistant" ? "ORBIT / COACH" : "YOU / PLAYER"}</div>{message.role === "assistant" ? <StructuredMessage content={message.content} /> : <p>{message.content}</p>}{busy && message._id?.startsWith("stream-") && <span className="cursor">▋</span>}</article>)}
+          {!messages.length && <div className="empty-state"><span className="spark"><Icon name="spark" size={34} /></span><p className="eyebrow">YOUR INTELLIGENT SPACE</p><h1>What would you like to explore?</h1><p>Ask a question, work through an idea, or start creating something new.</p><div className="prompt-grid"><button onClick={() => setDraft("Explain a programming concept simply.")}><span className="prompt-icon">01</span>Explain a programming concept<Icon name="arrow" size={15} /></button><button onClick={() => setDraft("Help me debug my code.")}><span className="prompt-icon">02</span>Help me debug my code<Icon name="arrow" size={15} /></button><button onClick={() => setDraft("Write something thoughtful for me.")}><span className="prompt-icon">03</span>Write something for me<Icon name="arrow" size={15} /></button><button onClick={() => setDraft("Help me learn something new.")}><span className="prompt-icon">04</span>Help me learn something new<Icon name="arrow" size={15} /></button></div></div>}
+          {messages.map((message, index) => <article className={`message ${message.role}`} key={message._id || index}><div className="message-label"><span className={message.role === "assistant" ? "coach-dot" : "player-dot"} />{message.role === "assistant" ? "ORBIT AI" : "YOU"}</div>{message.role === "assistant" ? <StructuredMessage content={message.content} /> : <p>{message.content}</p>}{busy && message._id?.startsWith("stream-") && <span className="cursor">▋</span>}</article>)}
         </div>
         <div className="composer-wrap">
-          {error && <p className="error composer-error">{error}</p>}
-          <form className="composer" onSubmit={sendMessage}><textarea ref={composerRef} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Ask Orbit anything..." rows="1" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><button aria-label="Send message" disabled={busy || !draft.trim()}>↑</button></form>
-          <div className="composer-meta"><span><i /> Orbit can make mistakes. Check important calls.</span><span>↵ send &nbsp; ⇧↵ new line</span></div>
+          {error && <div className="composer-error-actions"><p className="error">{error}</p>{retryPrompt && !busy && <button type="button" className="retry-button" onClick={() => sendMessage(null, retryPrompt)}>Retry</button>}</div>}
+          <form className="composer" onSubmit={sendMessage}><textarea ref={composerRef} value={draft} onChange={(e) => { setDraft(e.target.value); e.target.style.height = "auto"; e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`; }} placeholder="Message Orbit AI..." rows="1" onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(e); } }} /><button type={busy ? "button" : "submit"} aria-label={busy ? "Stop generating" : "Send message"} className={busy ? "stop-button" : ""} onClick={busy ? stopGeneration : undefined} disabled={!busy && !draft.trim()}>{busy ? "Stop" : <Icon name="send" size={17} />}</button></form>
+          <div className="composer-meta"><span>Orbit AI can make mistakes. Check important information.</span><span>Enter to send · Shift + Enter for new line</span></div>
         </div>
       </section>
     </main>
