@@ -1,4 +1,5 @@
 import { redisClient } from "../config/redis.js";
+import { env } from "../config/env.js";
 
 const authenticatedRateLimiter = async (req, res, next) => {
     try {
@@ -9,21 +10,26 @@ const authenticatedRateLimiter = async (req, res, next) => {
         const requestCount = await redisClient.incr(key);
 
         if (requestCount === 1) {
-            await redisClient.expire(key, 60);
+            await redisClient.expire(key, env.AUTH_RATE_WINDOW_SECONDS);
         }
 
-        if (requestCount > 20) {
-            const remainingTime = await redisClient.ttl(key);
+        if (requestCount > env.AUTH_RATE_LIMIT) {
+            let remainingTime = await redisClient.ttl(key);
+            if (remainingTime < 0) {
+                await redisClient.expire(key, env.AUTH_RATE_WINDOW_SECONDS);
+                remainingTime = env.AUTH_RATE_WINDOW_SECONDS;
+            }
+            res.setHeader("Retry-After", String(Math.max(1, remainingTime)));
 
             return res.status(429).json({
                 message: `Too many requests. Try again after ${remainingTime} seconds.`
             });
         }
 
-        next();
+        return next();
     } catch (error) {
         console.log("Authenticated rate limiter error:", error);
-        next();
+        return res.status(503).json({ message: "Request protection is temporarily unavailable" });
     }
 };
 
