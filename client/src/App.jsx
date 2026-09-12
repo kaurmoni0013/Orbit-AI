@@ -13,6 +13,11 @@ function Icon({ name, size = 18 }) {
     send: <><path d="m21 3-7.5 18-3.8-7.7L2 9.5 21 3Z" /><path d="M9.8 13.3 21 3" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-2.5V20a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H6v-2.5h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 1.8-1.8.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V5h2.5v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v2.5h-.2a1.7 1.7 0 0 0-1.6 1Z" /></>,
     spark: <><path d="m12 3 1.5 6.5L20 12l-6.5 1.5L12 20l-1.5-6.5L4 12l6.5-2.5L12 3Z" /></>,
+    pin: <path d="m15 4 5 5-2.5 2.5v4L14 19l-2-2-3 3-.9-.9 3-3-2-2 3.5-3.5h4L19 8l-4-4Z" />,
+    sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>,
+    moon: <path d="M20.5 15.2A8.5 8.5 0 0 1 8.8 3.5 8.5 8.5 0 1 0 20.5 15.2Z" />,
+    check: <path d="m5 12 4 4L19 6" />,
+    close: <><path d="m6 6 12 12M18 6 6 18" /></>,
   };
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icons[name]}</svg>;
 }
@@ -164,6 +169,9 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem("orbit-theme") || "dark");
+  const [renamingChatId, setRenamingChatId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
   const [retryPrompt, setRetryPrompt] = useState("");
   const composerRef = useRef(null);
   const streamControllerRef = useRef(null);
@@ -182,6 +190,10 @@ function App() {
     composerRef.current?.focus();
   }, [activeChat]);
   useEffect(() => () => streamControllerRef.current?.abort(), []);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("orbit-theme", theme);
+  }, [theme]);
 
   const selectChat = async (chat) => {
     streamControllerRef.current?.abort();
@@ -204,8 +216,11 @@ function App() {
     setSidebarOpen(false);
   };
   const renameChat = async (chat) => {
-    const topic = window.prompt("Rename conversation", chat.topic || "New conversation");
-    if (topic === null || !topic.trim() || topic.trim() === chat.topic) return;
+    const topic = renameValue.trim();
+    if (!topic || topic === chat.topic) {
+      setRenamingChatId(null);
+      return;
+    }
     try {
       const updated = await request(`/chat/${chat._id}`, {
         method: "PATCH",
@@ -213,9 +228,14 @@ function App() {
       });
       setChats((current) => current.map((item) => item._id === chat._id ? { ...item, topic: updated.topic } : item));
       setActiveChat((current) => current?._id === chat._id ? { ...current, topic: updated.topic } : current);
+      setRenamingChatId(null);
     } catch (err) {
       setError(err.message);
     }
+  };
+  const beginRename = (chat) => {
+    setRenamingChatId(chat._id);
+    setRenameValue(chat.topic || "New conversation");
   };
   const togglePinChat = async (chat) => {
     try {
@@ -298,10 +318,10 @@ function App() {
         <div className="sidebar-heading"><span>CONVERSATIONS</span><span>{visibleChats.length}</span></div>
         <div className="chat-list">
           {visibleChats.length ? visibleChats.map((chat) => <div className={`chat-row ${activeChat?._id === chat._id ? "selected" : ""}`} key={chat._id}>
-            <button className="chat-link" onClick={() => selectChat(chat)}><span className="chat-icon"><span /></span><span>{chat.topic || "New conversation"}</span></button>
+            {renamingChatId === chat._id ? <form className="rename-form" onSubmit={(event) => { event.preventDefault(); renameChat(chat); }}><input value={renameValue} maxLength="120" autoFocus onChange={(event) => setRenameValue(event.target.value)} /><button type="submit" aria-label="Save conversation name"><Icon name="check" size={13} /></button><button type="button" aria-label="Cancel rename" onClick={() => setRenamingChatId(null)}><Icon name="close" size={13} /></button></form> : <button className="chat-link" onClick={() => selectChat(chat)}><span className="chat-icon"><span /></span><span>{chat.topic || "New conversation"}</span>{chat.pinned && <Icon name="pin" size={12} />}</button>}
             <div className="chat-actions">
-              <button type="button" aria-label={chat.pinned ? "Unpin conversation" : "Pin conversation"} title={chat.pinned ? "Unpin" : "Pin"} onClick={() => togglePinChat(chat)}>{chat.pinned ? "Unpin" : "Pin"}</button>
-              <button type="button" aria-label="Rename conversation" title="Rename" onClick={() => renameChat(chat)}>Rename</button>
+              <button type="button" aria-label={chat.pinned ? "Unpin conversation" : "Pin conversation"} title={chat.pinned ? "Unpin" : "Pin"} onClick={() => togglePinChat(chat)}><Icon name="pin" size={13} /></button>
+              <button type="button" aria-label="Rename conversation" title="Rename" onClick={() => beginRename(chat)}>Rename</button>
               <button type="button" aria-label="Delete conversation" title="Delete" onClick={() => removeChat(chat)}>Delete</button>
             </div>
           </div>) : <p className="sidebar-empty">{search ? "No matching conversations." : "Your conversations will appear here."}</p>}
@@ -310,6 +330,7 @@ function App() {
           <div className="account">
             <div className="avatar">{user.name?.[0]?.toUpperCase() || "U"}</div>
             <div className="account-copy"><strong>{user.name}</strong><small>{user.email}</small></div>
+            <button className="icon-button" aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"} title={theme === "dark" ? "Light theme" : "Dark theme"} onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}><Icon name={theme === "dark" ? "sun" : "moon"} size={15} /></button>
             <button className="icon-button" aria-label="Open account menu" onClick={() => setProfileOpen((open) => !open)}><Icon name="chevron" size={15} /></button>
           </div>
           {profileOpen && <div className="profile-popover"><div><strong>{user.name}</strong><small>{user.email}</small></div><button className="popover-action"><Icon name="settings" size={15} /> Settings</button><button className="popover-action danger" onClick={logout}><Icon name="logout" size={15} /> Sign out</button></div>}
