@@ -11,6 +11,7 @@ import Chat from "../model/chatSchema.js";
 import Message from "../model/messageSchema.js";
 import { updateSummaryIfNeeded } from "../service/summaryService.js";
 import { buildMessagesForAI } from "../utils/chatContext.js";
+import { reserveTokenUsage } from "../utils/redisOperations.js";
 
 const MODEL = "openai/gpt-4o-mini";
 const PASSWORD = "StrongPassword!";
@@ -375,6 +376,16 @@ test("token and request limits reject work before the provider is called", async
     const rateResponse = await request("/chat/getRecentChat", {}, user.cookie);
     assert.equal(rateResponse.status, 429);
     assert.equal(providerCalls, 0);
+});
+
+test("concurrent token reservations never exceed the configured quota", async () => {
+    const key = "token-usage:concurrent-user";
+    const reservations = await Promise.all(
+        Array.from({ length: 4 }, () => reserveTokenUsage(key, 3000)),
+    );
+
+    assert.equal(reservations.filter(({ allowed }) => allowed).length, 3);
+    assert.equal(Number(redisValues.get(key)), 9000);
 });
 
 test("summary generation updates the chat and context stays within its configured limit", async () => {

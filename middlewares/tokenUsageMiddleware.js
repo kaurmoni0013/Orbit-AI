@@ -29,8 +29,26 @@ const tokenUsageMiddleware = async (req, res, next) => {
         req.tokenUsageKey = key;
         req.tokenReservation = estimatedTokens;
         req.tokenReservationSettled = false;
+        req.reserveAdditionalTokenUsage = async (messages) => {
+            const promptCharacters = messages.reduce(
+                (total, message) => total + (typeof message.content === "string" ? message.content.length : 0),
+                0,
+            );
+            const requiredReservation = Math.min(
+                env.TOKEN_LIMIT,
+                Math.max(512, Math.ceil(promptCharacters / 4) + env.AI_MAX_OUTPUT_TOKENS),
+            );
+            const additionalReservation = Math.max(0, requiredReservation - req.tokenReservation);
+            if (!additionalReservation) return { allowed: true };
+
+            const additional = await reserveTokenUsage(key, additionalReservation);
+            if (additional.allowed) {
+                req.tokenReservation += additionalReservation;
+            }
+            return additional;
+        };
         req.reconcileTokenReservation = async (actualTokens) => {
-            await adjustTokenUsage(key, actualTokens - estimatedTokens);
+            await adjustTokenUsage(key, actualTokens - req.tokenReservation);
             req.tokenReservationSettled = true;
         };
         res.once("finish", () => {

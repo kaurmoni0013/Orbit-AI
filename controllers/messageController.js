@@ -189,6 +189,18 @@ export const sendMessage = async (req, res) => {
       currentMessage: trimmedContent,
     });
 
+    const reservation = await req.reserveAdditionalTokenUsage(messagesForAI);
+    if (!reservation.allowed) {
+      const remainingTime = reservation.ttl < 0 ? env.TOKEN_WINDOW_SECONDS : reservation.ttl;
+      res.setHeader("Retry-After", String(Math.max(1, remainingTime)));
+      return res.status(429).json({
+        message: "Token limit reached. Please try after some time.",
+        tokenUsed: reservation.tokenUsed,
+        tokenLimit: env.TOKEN_LIMIT,
+        retryAfter: remainingTime,
+      });
+    }
+
     const { aiReply, usage } = await generateAIResponse({
       model: chat.model,
       messages: messagesForAI,
@@ -307,6 +319,17 @@ export const streamMessage = async (req, res) => {
       .sort({ createdAt: 1 })
       .skip(chat.summarizedTillMessageNumber);
     const messages = buildMessagesForAI({ chat, oldMessages, currentMessage: trimmedContent });
+    const reservation = await req.reserveAdditionalTokenUsage(messages);
+    if (!reservation.allowed) {
+      const remainingTime = reservation.ttl < 0 ? env.TOKEN_WINDOW_SECONDS : reservation.ttl;
+      res.setHeader("Retry-After", String(Math.max(1, remainingTime)));
+      return res.status(429).json({
+        message: "Token limit reached. Please try after some time.",
+        tokenUsed: reservation.tokenUsed,
+        tokenLimit: env.TOKEN_LIMIT,
+        retryAfter: remainingTime,
+      });
+    }
     stream = await streamAIResponse({
       model: chat.model,
       messages,

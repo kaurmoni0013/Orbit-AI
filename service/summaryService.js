@@ -5,7 +5,13 @@ import { generateAIResponse } from "./openRouterService.js";
 import { redisClient } from "../config/redis.js";
 import { env } from "../config/env.js";
 import { addUserTokenUsage } from "../utils/userUsage.js";
-import { acquireLock, releaseLock, renewLock } from "../utils/redisOperations.js";
+import {
+  acquireLock,
+  adjustTokenUsage,
+  releaseLock,
+  renewLock,
+  reserveTokenUsage,
+} from "../utils/redisOperations.js";
 
 const SUMMARY_CHUNK_SIZE = 20;
 
@@ -61,10 +67,34 @@ export const updateSummaryIfNeeded = async (chatId) => {
       }
     ];
 
-    const { aiReply, usage } = await generateAIResponse({
-      model: chat.model,
-      messages: summaryMessages,
-    });
+    const tokenUsageKey = `token-usage:${chat.userId}`;
+    const estimatedTokens = Math.min(
+      env.TOKEN_LIMIT,
+      Math.max(
+        512,
+        Math.ceil(
+          summaryMessages.reduce(
+            (total, message) => total + message.content.length,
+            0,
+          ) / 4,
+        ) + env.AI_MAX_OUTPUT_TOKENS,
+      ),
+    );
+    const reservation = await reserveTokenUsage(tokenUsageKey, estimatedTokens);
+    if (!reservation.allowed) return;
+
+    let aiReply;
+    let usage;
+    try {
+      ({ aiReply, usage } = await generateAIResponse({
+        model: chat.model,
+        messages: summaryMessages,
+      }));
+    } catch (error) {
+      await adjustTokenUsage(tokenUsageKey, -estimatedTokens);
+      throw error;
+    }
+    await adjustTokenUsage(tokenUsageKey, usage.totalTokens - estimatedTokens);
 
     chat.summary = aiReply.slice(0, env.AI_SUMMARY_CHAR_LIMIT);
     chat.summaryUpdatedAt = new Date();
@@ -82,17 +112,7 @@ export const updateSummaryIfNeeded = async (chatId) => {
       await addUserTokenUsage(user, usage.totalTokens);
     }
 
-    const tokenUsageKey = `token-usage:${chat.userId}`;
-    try {
-      const tokenUsed = await redisClient.incrBy(tokenUsageKey, usage.totalTokens);
-      const ttl = await redisClient.ttl(tokenUsageKey);
-      if (ttl === -1) {
-        await redisClient.expire(tokenUsageKey, env.TOKEN_WINDOW_SECONDS);
-      }
-      return tokenUsed;
-    } catch (error) {
-      console.log("Redis summary token usage update error:", error);
-    }
+    return Number(await redisClient.get(tokenUsageKey));
   } finally {
     clearInterval(renewalInterval);
     await releaseLock(lock);
