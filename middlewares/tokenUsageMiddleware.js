@@ -11,7 +11,7 @@ const tokenUsageMiddleware = async (req, res, next) => {
             env.TOKEN_LIMIT,
             Math.max(
                 512,
-                Math.ceil(Math.max(content.length, env.AI_CONTEXT_CHAR_LIMIT) / 4) + env.AI_MAX_OUTPUT_TOKENS
+                Math.ceil(content.length / 4) + env.AI_MAX_OUTPUT_TOKENS
             )
         );
         const reservation = await reserveTokenUsage(key, estimatedTokens);
