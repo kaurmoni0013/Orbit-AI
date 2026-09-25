@@ -1,6 +1,12 @@
 node_modules
-client/node_modules
-client/dist
+client
+client.zip
+docs
+test
+scripts
 .env
+.env.*
 .git
 *.log
+statusCode.txt
+credential.md

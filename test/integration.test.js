@@ -63,7 +63,7 @@ const streamChunks = (chunks, usage = { promptTokens: 4, completionTokens: 6 }) 
         for (const content of chunks) {
             yield { choices: [{ delta: { content } }] };
         }
-        yield { usage };
+        if (usage) yield { usage };
     },
 });
 
@@ -95,6 +95,12 @@ const installRedisDouble = () => {
     redisClient.eval = async (_script, { keys, arguments: args }) => {
         const key = keys[0];
         const current = Number(redisValues.get(key) || 0);
+        if (args.length === 1 && key.startsWith("rate-limit:")) {
+            const next = current + 1;
+            redisValues.set(key, String(next));
+            if (next === 1 || !redisExpiries.has(key)) redisExpiries.set(key, Number(args[0]));
+            return [next, redisExpiries.get(key)];
+        }
         if (args.length === 3) {
             const amount = Number(args[0]);
             const limit = Number(args[1]);
@@ -132,6 +138,18 @@ const installProviderDouble = () => {
                     throw new Error("stream interrupted");
                 },
             };
+        }
+        if (providerMode === "stream-error-chunk") {
+            return {
+                async *[Symbol.asyncIterator]() {
+                    yield { choices: [{ delta: { content: "partial" } }] };
+                    yield { error: { code: 500, message: "provider exploded" } };
+                },
+            };
+        }
+        if (providerMode === "stream-no-usage") {
+            if (payload.chatRequest.stream) return streamChunks(["Hello without usage"], null);
+            return { choices: [{ message: { content: "Hello without usage" } }] };
         }
         if (payload.chatRequest.stream) {
             return streamChunks(["Hello", " from Orbit"]);
@@ -185,6 +203,46 @@ test("signup, login, and authenticated profile use the JWT cookie", async () => 
     assert.equal(login.status, 200);
     const loginProfile = await request("/user/profile", {}, getCookie(login));
     assert.equal(loginProfile.status, 200);
+});
+
+test("password recovery returns generic responses and resets only once", async () => {
+    const user = await signup("reset-user");
+    const unknownResponse = await jsonRequest("/user/forgot-password", { email: "missing@example.com" });
+    assert.equal(unknownResponse.status, 202);
+    assert.equal((await unknownResponse.json()).previewUrl, undefined);
+
+    const response = await jsonRequest("/user/forgot-password", { email: user.email });
+    assert.equal(response.status, 202);
+    const body = await response.json();
+    assert.match(body.message, /If an account exists/);
+    assert.ok(body.previewUrl);
+    const token = new URL(body.previewUrl).hash.slice("#token=".length);
+    const stored = await User.findOne({ email: user.email }).select("+passwordResetTokenHash");
+    assert.equal(stored.passwordResetTokenHash.length, 64);
+    assert.notEqual(stored.passwordResetTokenHash, token);
+
+    const oldSession = await request("/user/profile", {}, user.cookie);
+    assert.equal(oldSession.status, 200);
+    const reset = await jsonRequest("/user/reset-password", { token, password: "NewStrongPassword!" });
+    assert.equal(reset.status, 200);
+
+    const invalidatedSession = await request("/user/profile", {}, user.cookie);
+    assert.equal(invalidatedSession.status, 401);
+    const secondReset = await jsonRequest("/user/reset-password", { token, password: "AnotherStrongPassword!" });
+    assert.equal(secondReset.status, 400);
+    const login = await jsonRequest("/user/login", { email: user.email, password: "NewStrongPassword!" });
+    assert.equal(login.status, 200);
+});
+
+test("login uses the same response for unknown accounts and wrong passwords", async () => {
+    const unknown = await jsonRequest("/user/login", { email: "missing@example.com", password: "WrongPassword!" });
+    assert.equal(unknown.status, 401);
+    assert.equal((await unknown.json()).message, "Invalid credentials");
+
+    const user = await signup("wrong-password");
+    const wrong = await jsonRequest("/user/login", { email: user.email, password: "WrongPassword!" });
+    assert.equal(wrong.status, 401);
+    assert.equal((await wrong.json()).message, "Invalid credentials");
 });
 
 test("protected routes reject requests without authentication", async () => {
@@ -359,6 +417,32 @@ test("message creation persists the user/assistant pair and usage", async () => 
     assert.equal(savedUser.usage.totalTokenUsed, 10);
 });
 
+test("retries replay a completed message without charging or calling the provider twice", async () => {
+    const user = await signup("idempotent-message");
+    const key = "retry-request-1234";
+    const body = { model: MODEL, content: "Retry this safely" };
+    const first = await request("/msg", {
+        method: "POST",
+        headers: { "x-idempotency-key": key },
+        body: JSON.stringify(body),
+    }, user.cookie);
+    const firstBody = await first.json();
+    const second = await request("/msg", {
+        method: "POST",
+        headers: { "x-idempotency-key": key },
+        body: JSON.stringify(body),
+    }, user.cookie);
+    const secondBody = await second.json();
+
+    assert.equal(first.status, 201);
+    assert.equal(second.status, 200);
+    assert.equal(secondBody.reply, firstBody.reply);
+    assert.equal(providerCalls, 1);
+    assert.equal(await Message.countDocuments({ chatId: firstBody.chatId }), 2);
+    const savedUser = await User.findOne({ email: user.email });
+    assert.equal(savedUser.usage.totalTokenUsed, 10);
+});
+
 test("provider failure cleans up a newly created chat and messages", async () => {
     const user = await signup("failed-message");
     providerMode = "failure";
@@ -405,6 +489,44 @@ test("streaming failure does not persist partial or duplicate messages", async (
     assert.match(body, /event: error/);
     assert.equal(await Chat.countDocuments({}), 0);
     assert.equal(await Message.countDocuments({}), 0);
+});
+
+test("provider error chunks abort the stream without persisting content", async () => {
+    const user = await signup("error-chunk-stream");
+    providerMode = "stream-error-chunk";
+    const response = await jsonRequest("/msg/stream", {
+        model: MODEL,
+        content: "Trigger a provider error",
+    }, user.cookie);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(body, /event: error/);
+    assert.equal(body.includes("event: done"), false);
+    assert.equal(await Chat.countDocuments({}), 0);
+    assert.equal(await Message.countDocuments({}), 0);
+    const databaseUser = await User.findOne({ email: user.email });
+    assert.equal(databaseUser.usage.totalTokenUsed, 0);
+});
+
+test("streaming without provider usage still records estimated token usage", async () => {
+    const user = await signup("stream-no-usage");
+    providerMode = "stream-no-usage";
+    const response = await jsonRequest("/msg/stream", {
+        model: MODEL,
+        content: "Estimate this",
+    }, user.cookie);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(body, /event: done/);
+    const messages = await Message.find({}).sort({ createdAt: 1 });
+    assert.equal(messages.length, 2);
+    const chat = await Chat.findById(messages[0].chatId);
+    assert.equal(chat.usage.totalTokens > 0, true);
+    assert.equal(chat.usage.totalTokens, chat.usage.promptTokens + chat.usage.completionTokens);
+    const databaseUser = await User.findOne({ email: user.email });
+    assert.equal(databaseUser.usage.totalTokenUsed, chat.usage.totalTokens);
 });
 
 test("token and request limits reject work before the provider is called", async () => {
@@ -495,6 +617,9 @@ test("concurrent summary jobs claim a range only once", async () => {
     assert.equal(providerCalls, 1);
     assert.equal(summarized.summarizedTillMessageNumber, 20);
     assert.equal(summarized.usage.totalTokens, 5);
+    const databaseUser = await User.findById(chat.userId);
+    assert.equal(databaseUser.usage.totalTokenUsed, 5);
+    assert.equal(Number(redisValues.get(`token-usage:${chat.userId}`)), 5);
 });
 
 test("chat and account deletion remove related messages and chats", async () => {

@@ -2,54 +2,73 @@ services:
   mongo:
     image: mongo:8
     restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     volumes:
       - mongo-data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --eval
+          "try { rs.status().ok } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}).ok }"
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 8s
+      retries: 12
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 6
 
   api:
     build: .
     restart: unless-stopped
-    env_file: .env
+    init: true
+    env_file:
+      - .env
     environment:
-      MONGO_URL: mongodb://mongo:27017/chatgpt-clone
+      NODE_ENV: production
+      PORT: 3000
+      MONGO_URL: mongodb://mongo:27017/orbit-ai?replicaSet=rs0
       REDIS_URL: redis://redis:6379
-      CORS_ORIGINS: http://localhost:5173
+      APP_URL: ${APP_URL:-http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     depends_on:
       mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/ready"]
       interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 6
+      start_period: 20s
 
   client:
     build:
       context: ./client
       args:
-        VITE_API_URL: http://localhost:3000
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "5173:80"
+      - "5173:8080"
 
 volumes:
   mongo-data:
+  redis-data:

@@ -1,6 +1,7 @@
 import { redisClient } from "../config/redis.js";
 import { env } from "../config/env.js";
 import { reserveTokenUsage, adjustTokenUsage } from "../utils/redisOperations.js";
+import { logError } from "../utils/safeLog.js";
 
 const tokenUsageMiddleware = async (req, res, next) => {
     try {
@@ -54,14 +55,14 @@ const tokenUsageMiddleware = async (req, res, next) => {
         res.once("finish", () => {
             if (!req.tokenReservationSettled && res.statusCode >= 400) {
                 void req.reconcileTokenReservation(0).catch((releaseError) => {
-                    console.log("Failed to release token reservation:", releaseError);
+                    logError("token_usage.release_failed", { requestId: req.requestId }, releaseError);
                 });
             }
         });
 
         return next();
     } catch (error) {
-        console.log("Token usage middleware error:", error);
+        logError("token_usage.failed", { requestId: req.requestId }, error);
         return res.status(503).json({ message: "Token quota is temporarily unavailable" });
     }
 };

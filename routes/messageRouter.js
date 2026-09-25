@@ -1,6 +1,6 @@
 import express from 'express'
 import authUserMiddleware from '../middlewares/authUserMiddleware.js';
-import { getMessage,sendMessage,streamMessage } from '../controllers/messageController.js';
+import { getMessage,sendMessage,streamMessage } from '../config/controllers/messageController.js';
 import authenticatedRateLimiter from '../middlewares/authenticatedRateLimiter.js';
 import tokenUsageMiddleware from '../middlewares/tokenUsageMiddleware.js';
 import loadUserMiddleware from '../middlewares/loadUserMiddleware.js';

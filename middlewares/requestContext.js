@@ -14,7 +14,7 @@ const requestContext = (req, res, next) => {
             event: "http.request",
             requestId,
             method: req.method,
-            path: req.originalUrl,
+            path: `${req.baseUrl}${req.path}`,
             status: res.statusCode,
             durationMs: Math.round(performance.now() - startedAt),
         }));

@@ -1,4 +1,5 @@
 import User from "../model/userSchema.js";
+import { logError } from "../utils/safeLog.js";
 
 const loadUserMiddleware = async (req, res, next) => {
     try {
@@ -14,7 +15,7 @@ const loadUserMiddleware = async (req, res, next) => {
 
         next();
     } catch (error) {
-        console.log("Load user error:", error);
+        logError("user.load.failed", { requestId: req.requestId }, error);
 
         return res.status(500).json({
             message: "Internal server error"

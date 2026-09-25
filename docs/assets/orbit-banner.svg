@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="480" viewBox="0 0 1600 480" role="img" aria-labelledby="title desc">
+  <title id="title">Orbit AI — Make room for better questions</title>
+  <desc id="desc">A dark editorial hero banner for the Orbit AI conversation workspace.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#080a11"/>
+      <stop offset="0.55" stop-color="#111326"/>
+      <stop offset="1" stop-color="#0b0d16"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.22" cy="0.12" r="0.9">
+      <stop offset="0" stop-color="#7257e8" stop-opacity="0.34"/>
+      <stop offset="0.55" stop-color="#342667" stop-opacity="0.13"/>
+      <stop offset="1" stop-color="#080a11" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="orbit" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a996ff"/>
+      <stop offset="0.55" stop-color="#6ee7f9"/>
+      <stop offset="1" stop-color="#8b78f6"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#a996ff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#a996ff" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#6ee7f9" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="28"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="480" rx="28" fill="url(#background)"/>
+  <rect width="1600" height="480" rx="28" fill="url(#glow)"/>
+  <circle cx="1280" cy="40" r="170" fill="#7864ee" opacity="0.1" filter="url(#blur)"/>
+  <path d="M0 398C270 334 430 472 700 390s430-98 900 18" fill="none" stroke="url(#line)" stroke-width="1" opacity="0.65"/>
+  <path d="M0 420C270 356 430 494 700 412s430-98 900 18" fill="none" stroke="#9c8aff" stroke-width="1" opacity="0.12"/>
+  <g opacity="0.28" fill="#a998ff">
+    <circle cx="105" cy="78" r="1.5"/><circle cx="146" cy="78" r="1.5"/><circle cx="187" cy="78" r="1.5"/><circle cx="228" cy="78" r="1.5"/>
+    <circle cx="105" cy="119" r="1.5"/><circle cx="146" cy="119" r="1.5"/><circle cx="187" cy="119" r="1.5"/><circle cx="228" cy="119" r="1.5"/>
+    <circle cx="105" cy="160" r="1.5"/><circle cx="146" cy="160" r="1.5"/><circle cx="187" cy="160" r="1.5"/><circle cx="228" cy="160" r="1.5"/>
+  </g>
+  <g transform="translate(103 84)">
+    <rect width="42" height="42" rx="13" fill="#211d3c" stroke="#6b59ba" stroke-width="1.5"/>
+    <path d="m21 8 2.8 8.2L32 19l-8.2 2.8L21 30l-2.8-8.2L10 19l8.2-2.8L21 8Z" fill="none" stroke="#b9aaff" stroke-width="1.8" stroke-linejoin="round"/>
+    <text x="58" y="28" fill="#f7f6ff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20" font-weight="700" letter-spacing="3">ORBIT <tspan fill="#8e87a9" font-weight="500">AI</tspan></text>
+  </g>
+  <text x="103" y="218" fill="#f7f6ff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="64" font-weight="700" letter-spacing="-3">Make room for</text>
+  <text x="103" y="286" fill="url(#orbit)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="64" font-weight="700" letter-spacing="-3">better questions.</text>
+  <text x="107" y="333" fill="#a2a5b8" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="17">A calm, intelligent workspace for exploring questions and turning ideas into momentum.</text>
+  <g transform="translate(105 365)">
+    <rect width="153" height="31" rx="15.5" fill="#17172a" stroke="#39335b"/>
+    <circle cx="17" cy="15.5" r="4" fill="#72d8bb"/>
+    <text x="30" y="20" fill="#b9bbc9" font-family="DM Mono,Consolas,monospace" font-size="10" letter-spacing="1">PRIVATE BY DESIGN</text>
+    <rect x="166" width="145" height="31" rx="15.5" fill="#17172a" stroke="#39335b"/>
+    <path d="M182 15.5h10m-5-5v10" stroke="#a998ff" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="203" y="20" fill="#b9bbc9" font-family="DM Mono,Consolas,monospace" font-size="10" letter-spacing="1">STREAMING READY</text>
+    <rect x="324" width="152" height="31" rx="15.5" fill="#17172a" stroke="#39335b"/>
+    <path d="M342 10v11m-5.5-5.5h11" stroke="#6ee7f9" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="363" y="20" fill="#b9bbc9" font-family="DM Mono,Consolas,monospace" font-size="10" letter-spacing="1">OPENROUTER</text>
+  </g>
+  <g transform="translate(1190 90)">
+    <ellipse cx="160" cy="150" rx="188" ry="78" transform="rotate(-21 160 150)" fill="none" stroke="#a998ff" stroke-width="1.5" opacity="0.3"/>
+    <ellipse cx="160" cy="150" rx="235" ry="104" transform="rotate(-21 160 150)" fill="none" stroke="#6ee7f9" stroke-width="1" opacity="0.18"/>
+    <ellipse cx="160" cy="150" rx="125" ry="53" transform="rotate(-21 160 150)" fill="none" stroke="#a998ff" stroke-width="1" opacity="0.2"/>
+    <circle cx="160" cy="150" r="49" fill="#17162d" stroke="#8b78f6" stroke-width="1.5"/>
+    <path d="m160 113 7 30 30 7-30 7-7 30-7-30-30-7 30-7 7-30Z" fill="none" stroke="#c1b5ff" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="307" cy="106" r="6" fill="#6ee7f9"/>
+    <circle cx="24" cy="196" r="4" fill="#a998ff"/>
+    <circle cx="181" cy="29" r="3" fill="#6ee7f9" opacity="0.8"/>
+  </g>
+</svg>

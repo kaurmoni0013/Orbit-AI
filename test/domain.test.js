@@ -75,7 +75,7 @@ test("provider timeout aborts the underlying request", async () => {
 
     try {
         await assert.rejects(
-            generateAIResponse({ model: "test-model", messages: [] }),
+            generateAIResponse({ model: env.ALLOWED_MODELS.split(",")[0].trim(), messages: [] }),
             { code: "AI_REQUEST_TIMEOUT" },
         );
         assert.equal(providerSignal.aborted, true);
@@ -101,7 +101,7 @@ test("caller abort stops retries and aborts the provider request", async () => {
 
     try {
         const pending = generateAIResponse({
-            model: "test-model",
+            model: env.ALLOWED_MODELS.split(",")[0].trim(),
             messages: [],
             signal: controller.signal,
         });

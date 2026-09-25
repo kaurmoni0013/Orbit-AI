@@ -1,52 +1,59 @@
-import Chat from "../model/chatSchema.js";
-import Message from "../model/messageSchema.js";
+import Chat from "../../model/chatSchema.js";
+import Message from "../../model/messageSchema.js";
 import mongoose from "mongoose";
-import {generateAIResponse, streamAIResponse, consumeAIStream} from "../service/openRouterService.js"
-import {buildMessagesForAI} from "../utils/chatContext.js"
+import {generateAIResponse, streamAIResponse, consumeAIStream} from "../../service/openRouterService.js"
+import {buildMessagesForAI} from "../../utils/chatContext.js"
 import {
   addUserTokenUsage,
-} from "../utils/userUsage.js";
-import { addChatTokenUsage } from "../utils/tokenUsage.js";
-import {updateSummaryIfNeeded} from "../service/summaryService.js"
-import {redisClient} from "../config/redis.js"
-import { env } from "../config/env.js";
+} from "../../utils/userUsage.js";
+import { addChatTokenUsage } from "../../utils/tokenUsage.js";
+import {updateSummaryIfNeeded} from "../../service/summaryService.js"
+import {redisClient} from "../redis.js"
+import { env } from "../env.js";
+import { allowedModels } from "../allowedModels.js";
+import { logError } from "../../utils/safeLog.js";
 
 const MAX_MESSAGE_LENGTH = 12000;
-const allowedModels = new Set(
-  env.ALLOWED_MODELS.split(",").map((model) => model.trim()).filter(Boolean)
-);
 
-const persistMessagePair = async ({ chat, user, content, aiReply, usage }) => {
+const getIdempotencyKey = (req) => {
+  const key = req.get("x-idempotency-key");
+  return typeof key === "string" && /^[a-zA-Z0-9._:-]{8,128}$/.test(key) ? key : null;
+};
+
+const findCompletedPair = async (userId, key) => {
+  if (!key) return null;
+  const userMessage = await Message.findOne({ userId, clientRequestId: key });
+  if (!userMessage) return null;
+  const assistantMessage = await Message.findOne({
+    chatId: userMessage.chatId,
+    role: "assistant",
+    createdAt: { $gte: userMessage.createdAt },
+  }).sort({ createdAt: 1 });
+  if (!assistantMessage) {
+    const error = new Error("A matching request is still being completed");
+    error.statusCode = 409;
+    throw error;
+  }
+  return [userMessage, assistantMessage];
+};
+
+const releaseDuplicateReservation = async (req) => {
+  if (req.reconcileTokenReservation && !req.tokenReservationSettled) await req.reconcileTokenReservation(0);
+};
+
+const persistMessagePair = async ({ chat, user, content, aiReply, usage, clientRequestId = null }) => {
   const session = await mongoose.startSession();
   let createdMessages;
   try {
-    try {
-      await session.withTransaction(async () => {
-        createdMessages = await Message.create([
-          { chatId: chat._id, role: "user", content, userId: user._id },
-          { chatId: chat._id, role: "assistant", content: aiReply, userId: user._id, usage },
-        ], { session, ordered: true });
-        chat.messageCount += 2;
-        if (chat.topic === "New Chat") chat.topic = content.slice(0, 40);
-        await addChatTokenUsage(chat, usage, session);
-        await addUserTokenUsage(user, usage.totalTokens, session);
-      });
-    } catch (error) {
-      if (!String(error.message).includes("Transaction numbers are only allowed")) throw error;
+    await session.withTransaction(async () => {
       createdMessages = await Message.create([
-        { chatId: chat._id, role: "user", content, userId: user._id },
+        { chatId: chat._id, role: "user", content, userId: user._id, clientRequestId },
         { chatId: chat._id, role: "assistant", content: aiReply, userId: user._id, usage },
-      ]);
-      try {
-        chat.messageCount += 2;
-        if (chat.topic === "New Chat") chat.topic = content.slice(0, 40);
-        await addChatTokenUsage(chat, usage);
-        await addUserTokenUsage(user, usage.totalTokens);
-      } catch (fallbackError) {
-        await Message.deleteMany({ _id: { $in: createdMessages.map((message) => message._id) } });
-        throw fallbackError;
-      }
-    }
+      ], { session, ordered: true });
+      const nextTopic = chat.topic === "New Chat" ? content.slice(0, 40) : undefined;
+      await addChatTokenUsage(chat, usage, session, { messageCountDelta: 2, topic: nextTopic });
+      await addUserTokenUsage(user, usage.totalTokens, session);
+    });
   } finally {
     await session.endSession();
   }
@@ -94,7 +101,7 @@ export const getMessage = async(req,res)=>{
         });
     }
     catch(err){
-        console.log(err);
+        logError("message.request.failed", { requestId: req.requestId }, err);
         res.status(500).json({
             messages: "Internal server error"
         })
@@ -117,7 +124,6 @@ export const sendMessage = async (req, res) => {
         message: "Message content is required"
       });
     }
-
     const trimmedContent = content.trim();
     if (trimmedContent.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({
@@ -125,8 +131,22 @@ export const sendMessage = async (req, res) => {
       });
     }
 
-
-    
+    const clientRequestId = getIdempotencyKey(req);
+    const completedPair = await findCompletedPair(req.user._id, clientRequestId);
+    if (completedPair) {
+      await releaseDuplicateReservation(req);
+      const assistantMessage = completedPair[1];
+      return res.status(200).json({
+        message: "Message already completed",
+        chatId: assistantMessage.chatId,
+        reply: assistantMessage.content,
+        usage: assistantMessage.usage,
+        tokenUsed: req.user.usage.tokenUsed,
+        tokenLimit: env.TOKEN_LIMIT,
+        userMessage: completedPair[0],
+        assistantMessage,
+      });
+    }
 
     let chat;
 
@@ -216,6 +236,7 @@ export const sendMessage = async (req, res) => {
       content: trimmedContent,
       aiReply,
       usage,
+      clientRequestId,
     });
 
     // redis ke andar information ko daalna padega
@@ -226,7 +247,7 @@ export const sendMessage = async (req, res) => {
     }
 
     void updateSummaryIfNeeded(chat._id).catch((error) => {
-      console.log("Conversation summary update error:", error);
+      logError("summary.update_failed", { requestId: req.requestId }, error);
     });
 
     return res.status(201).json({
@@ -242,7 +263,7 @@ export const sendMessage = async (req, res) => {
   } catch (err) {
     if (req.reconcileTokenReservation && !req.tokenReservationSettled) {
       await req.reconcileTokenReservation(0).catch((releaseError) => {
-        console.log("Failed to release token reservation:", releaseError);
+        logError("token_usage.release_failed", { requestId: req.requestId }, releaseError);
       });
     }
     if (createdChat) {
@@ -250,10 +271,10 @@ export const sendMessage = async (req, res) => {
         Message.deleteMany({ chatId: createdChat._id }),
         Chat.deleteOne({ _id: createdChat._id, userId: req.user._id }),
       ]).catch((cleanupError) => {
-        console.log("Failed to clean up incomplete chat:", cleanupError);
+        logError("chat.cleanup_failed", { requestId: req.requestId }, cleanupError);
       });
     }
-    console.log(err);
+    logError("message.request.failed", { requestId: req.requestId }, err);
     res.status(500).json({
       message: "Internal server error"
     });
@@ -304,6 +325,23 @@ export const streamMessage = async (req, res) => {
       return res.status(400).json({ message: `Message must be ${MAX_MESSAGE_LENGTH} characters or fewer` });
     }
 
+    const clientRequestId = getIdempotencyKey(req);
+    const completedPair = await findCompletedPair(req.user._id, clientRequestId);
+    if (completedPair) {
+      await releaseDuplicateReservation(req);
+      const assistantMessage = completedPair[1];
+      res.status(200).set({
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      res.flushHeaders();
+      res.write(`event: token\ndata: ${JSON.stringify({ content: assistantMessage.content })}\n\n`);
+      res.write(`event: done\ndata: ${JSON.stringify({ chatId: assistantMessage.chatId, usage: assistantMessage.usage, userMessageId: completedPair[0]._id, assistantMessageId: assistantMessage._id })}\n\n`);
+      return res.end();
+    }
+
     if (chatId) {
       if (!mongoose.Types.ObjectId.isValid(chatId)) {
         return res.status(400).json({ message: "Invalid chat id" });
@@ -348,7 +386,7 @@ export const streamMessage = async (req, res) => {
     res.flushHeaders();
 
     let aiReply = "";
-    let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    let usage = null;
     await consumeAIStream({
       stream,
       signal: streamController.signal,
@@ -356,23 +394,34 @@ export const streamMessage = async (req, res) => {
         if (clientDisconnected || streamController.signal.aborted) {
           throw streamController.signal.reason || new Error("Streaming request aborted");
         }
-      receivedFirstChunk = true;
-      resetStreamTimer();
-      const delta = chunk.choices?.[0]?.delta?.content || "";
-      if (delta) {
-        aiReply += delta;
-        res.write(`event: token\ndata: ${JSON.stringify({ content: delta })}\n\n`);
-      }
-      if (chunk.usage) {
-        const promptTokens = chunk.usage.promptTokens || 0;
-        const completionTokens = chunk.usage.completionTokens || 0;
-        usage = { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens };
-      }
+        if (chunk?.error) throw new Error("AI provider returned an error");
+        if (chunk?.choices?.[0]?.finish_reason === "error") throw new Error("AI provider returned an error");
+        receivedFirstChunk = true;
+        resetStreamTimer();
+        const delta = chunk.choices?.[0]?.delta?.content || "";
+        if (delta) {
+          aiReply += delta;
+          res.write(`event: token\ndata: ${JSON.stringify({ content: delta })}\n\n`);
+        }
+        if (chunk.usage) {
+          const promptTokens = Number(chunk.usage.promptTokens) || 0;
+          const completionTokens = Number(chunk.usage.completionTokens) || 0;
+          usage = { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens };
+        }
       },
     });
 
     if (!aiReply || clientDisconnected || streamController.signal.aborted) {
       throw streamController.signal.reason || new Error("AI response is empty");
+    }
+    if (!usage?.totalTokens) {
+      const promptCharacters = messages.reduce(
+        (total, message) => total + (typeof message.content === "string" ? message.content.length : 0),
+        0,
+      );
+      const promptTokens = Math.max(1, Math.ceil(promptCharacters / 4));
+      const completionTokens = Math.max(1, Math.ceil(aiReply.length / 4));
+      usage = { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens };
     }
     console.log(JSON.stringify({
       event: "ai.stream.complete",
@@ -384,15 +433,15 @@ export const streamMessage = async (req, res) => {
     if (req.reconcileTokenReservation) {
       await req.reconcileTokenReservation(usage.totalTokens);
     }
-    await persistMessagePair({ chat, user: req.user, content: trimmedContent, aiReply, usage });
-    void updateSummaryIfNeeded(chat._id).catch((error) => console.log("Conversation summary update error:", error));
-    res.write(`event: done\ndata: ${JSON.stringify({ chatId: chat._id, usage })}\n\n`);
+    const persistedMessages = await persistMessagePair({ chat, user: req.user, content: trimmedContent, aiReply, usage, clientRequestId });
+    void updateSummaryIfNeeded(chat._id).catch((error) => logError("summary.update_failed", { requestId: req.requestId }, error));
+    res.write(`event: done\ndata: ${JSON.stringify({ chatId: chat._id, usage, userMessageId: persistedMessages[0]._id, assistantMessageId: persistedMessages[1]._id })}\n\n`);
     return res.end();
   } catch (error) {
-    console.log("Streaming message error:", error);
+    logError("message.stream.failed", { requestId: req.requestId }, error);
     if (req.reconcileTokenReservation && !req.tokenReservationSettled) {
       await req.reconcileTokenReservation(0).catch((releaseError) => {
-        console.log("Failed to release token reservation:", releaseError);
+        logError("token_usage.release_failed", { requestId: req.requestId }, releaseError);
       });
     }
     if (chat && !chat.messageCount) await Chat.deleteOne({ _id: chat._id, userId: req.user._id });

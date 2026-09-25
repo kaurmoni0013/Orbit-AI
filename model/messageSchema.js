@@ -19,6 +19,11 @@ const messageSchema = new mongoose.Schema({
     required: true
   },
 
+  clientRequestId: {
+    type: String,
+    default: null
+  },
+
   content: {
     type: String,
     required: true,
@@ -50,6 +55,13 @@ const messageSchema = new mongoose.Schema({
 
 messageSchema.index({ chatId: 1, createdAt: 1 });
 messageSchema.index({ userId: 1, createdAt: -1 });
+messageSchema.index(
+  { userId: 1, clientRequestId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { clientRequestId: { $type: "string" } },
+  },
+);
 
 const Message = mongoose.model("Message", messageSchema);
 

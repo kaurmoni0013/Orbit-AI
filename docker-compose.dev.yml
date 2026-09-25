@@ -1,0 +1,6 @@
+services:
+  api:
+    environment:
+      NODE_ENV: development
+      APP_URL: ${APP_URL:-http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}

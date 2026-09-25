@@ -24,6 +24,17 @@ if ttl < 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) end
 return adjusted
 `;
 
+const RATE_LIMIT_SCRIPT = `
+local current = redis.call("INCR", KEYS[1])
+if current == 1 then redis.call("EXPIRE", KEYS[1], ARGV[1]) end
+local ttl = redis.call("TTL", KEYS[1])
+if ttl < 0 then
+  redis.call("EXPIRE", KEYS[1], ARGV[1])
+  ttl = tonumber(ARGV[1])
+end
+return {current, ttl}
+`;
+
 const RELEASE_LOCK_SCRIPT = `
 if redis.call("GET", KEYS[1]) == ARGV[1] then
   return redis.call("DEL", KEYS[1])
@@ -31,44 +42,47 @@ end
 return 0
 `;
 
-export const reserveTokenUsage = async (key, amount) => {
-  const result = await redisClient.eval(RESERVE_SCRIPT, {
-    keys: [key],
-    arguments: [String(amount), String(env.TOKEN_LIMIT), String(env.TOKEN_WINDOW_SECONDS)],
-  });
-  return {
-    allowed: Number(result[0]) === 1,
-    tokenUsed: Number(result[1]),
-    ttl: Number(result[2]),
-  };
+export const consumeRateLimit = async (key, windowSeconds) => {
+    const result = await redisClient.eval(RATE_LIMIT_SCRIPT, {
+        keys: [key],
+        arguments: [String(windowSeconds)],
+    });
+    return { count: Number(result[0]), ttl: Number(result[1]) };
 };
 
-export const adjustTokenUsage = async (key, delta) => {
-  return Number(await redisClient.eval(ADJUST_SCRIPT, {
+export const reserveTokenUsage = async (key, amount) => {
+    const result = await redisClient.eval(RESERVE_SCRIPT, {
+        keys: [key],
+        arguments: [String(amount), String(env.TOKEN_LIMIT), String(env.TOKEN_WINDOW_SECONDS)],
+    });
+    return {
+        allowed: Number(result[0]) === 1,
+        tokenUsed: Number(result[1]),
+        ttl: Number(result[2]),
+    };
+};
+
+export const adjustTokenUsage = async (key, delta) => Number(await redisClient.eval(ADJUST_SCRIPT, {
     keys: [key],
     arguments: [String(delta), String(env.TOKEN_WINDOW_SECONDS)],
-  }));
-};
+}));
 
 export const acquireLock = async (key, ttlSeconds) => {
-  const value = crypto.randomUUID();
-  const acquired = await redisClient.set(key, value, { NX: true, EX: ttlSeconds });
-  return acquired ? { key, value } : null;
+    const value = crypto.randomUUID();
+    const acquired = await redisClient.set(key, value, { NX: true, EX: ttlSeconds });
+    return acquired ? { key, value } : null;
 };
 
 export const releaseLock = async (lock) => {
-  if (!lock) return;
-  await redisClient.eval(RELEASE_LOCK_SCRIPT, {
-    keys: [lock.key],
-    arguments: [lock.value],
-  });
+    if (!lock) return;
+    await redisClient.eval(RELEASE_LOCK_SCRIPT, {
+        keys: [lock.key],
+        arguments: [lock.value],
+    });
 };
 
 export const renewLock = async (lock, ttlSeconds) => {
-  if (!lock) return false;
-  const renewed = await redisClient.set(lock.key, lock.value, {
-    XX: true,
-    EX: ttlSeconds,
-  });
-  return renewed === "OK";
+    if (!lock) return false;
+    const renewed = await redisClient.set(lock.key, lock.value, { XX: true, EX: ttlSeconds });
+    return renewed === "OK";
 };

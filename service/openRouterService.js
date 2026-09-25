@@ -1,5 +1,6 @@
 import openRouter from "../config/openRouter.js";
 import { env } from "../config/env.js";
+import { assertAllowedModel } from "../config/allowedModels.js";
 
 const sleep = (milliseconds, signal) => new Promise((resolve, reject) => {
   let timer;
@@ -79,8 +80,15 @@ const requestCompletion = async ({ model, messages, signal }) => {
 };
 
 export const streamAIResponse = async ({ model, messages, signal }) => {
+  assertAllowedModel(model);
   const request = openRouter.chat.send({
-    chatRequest: { model, messages, stream: true, maxTokens: env.AI_MAX_OUTPUT_TOKENS },
+    chatRequest: {
+      model,
+      messages,
+      stream: true,
+      stream_options: { include_usage: true },
+      maxTokens: env.AI_MAX_OUTPUT_TOKENS,
+    },
   }, { signal });
   const aborted = createAbortPromise(signal);
   if (!aborted) return request;
@@ -111,6 +119,7 @@ export const consumeAIStream = async ({ stream, signal, onChunk }) => {
 };
 
 export const generateAIResponse = async ({ model, messages, requestId = null, signal }) => {
+  assertAllowedModel(model);
   const startedAt = performance.now();
   let completion;
   for (let attempt = 0; attempt <= env.AI_MAX_RETRIES; attempt += 1) {
@@ -126,16 +135,28 @@ export const generateAIResponse = async ({ model, messages, requestId = null, si
     }
   }
 
-  const aiReply = completion.choices[0]?.message?.content;
+  const aiReply = completion?.choices?.[0]?.message?.content;
 
-  if (!aiReply) {                                                  
+  if (typeof aiReply !== "string" || !aiReply.trim()) {
     throw new Error("AI response is empty");
   }
- 
-  // input Token == Prompt Token
-  // output Token == completeio Token
-  const promptTokens = completion.usage?.promptTokens || 0;
-  const completionTokens = completion.usage?.completionTokens || 0;
+
+  const toTokenCount = (value) => {
+    const tokens = Number(value);
+    return Number.isSafeInteger(tokens) && tokens >= 0 ? tokens : 0;
+  };
+
+  let promptTokens = toTokenCount(completion?.usage?.promptTokens);
+  let completionTokens = toTokenCount(completion?.usage?.completionTokens);
+
+  if (!promptTokens && !completionTokens) {
+    const promptCharacters = messages.reduce(
+      (total, message) => total + (typeof message.content === "string" ? message.content.length : 0),
+      0,
+    );
+    promptTokens = Math.max(1, Math.ceil(promptCharacters / 4));
+    completionTokens = Math.max(1, Math.ceil(aiReply.length / 4));
+  }
 
   const result = {
     aiReply,

@@ -1,34 +1,18 @@
-import { redisClient } from "../config/redis.js";
+import { consumeRateLimit } from "../utils/redisOperations.js";
 import { env } from "../config/env.js";
 
 const authenticatedRateLimiter = async (req, res, next) => {
     try {
-        const userId = req.userId;
-
-        const key = `rate-limit:user:${userId}`;
-
-        const requestCount = await redisClient.incr(key);
-
-        if (requestCount === 1) {
-            await redisClient.expire(key, env.AUTH_RATE_WINDOW_SECONDS);
+        const { count, ttl } = await consumeRateLimit(`rate-limit:user:${req.userId}`, env.AUTH_RATE_WINDOW_SECONDS);
+        if (count > env.AUTH_RATE_LIMIT) {
+            const remainingTime = Math.max(1, ttl);
+            res.setHeader("Retry-After", String(remainingTime));
+            return res.status(429).json({ message: `Too many requests. Try again after ${remainingTime} seconds.` });
         }
-
-        if (requestCount > env.AUTH_RATE_LIMIT) {
-            let remainingTime = await redisClient.ttl(key);
-            if (remainingTime < 0) {
-                await redisClient.expire(key, env.AUTH_RATE_WINDOW_SECONDS);
-                remainingTime = env.AUTH_RATE_WINDOW_SECONDS;
-            }
-            res.setHeader("Retry-After", String(Math.max(1, remainingTime)));
-
-            return res.status(429).json({
-                message: `Too many requests. Try again after ${remainingTime} seconds.`
-            });
-        }
-
         return next();
     } catch (error) {
-        console.log("Authenticated rate limiter error:", error);
+        if (env.RATE_LIMIT_FAIL_OPEN) return next();
+        console.error(JSON.stringify({ event: "rate_limit.authenticated.failed", requestId: req.requestId, error: error?.name || "UnknownError" }));
         return res.status(503).json({ message: "Request protection is temporarily unavailable" });
     }
 };

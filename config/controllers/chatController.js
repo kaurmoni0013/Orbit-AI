@@ -1,11 +1,8 @@
-import Chat from "../model/chatSchema.js"
-import Message from "../model/messageSchema.js";
+import Chat from "../../model/chatSchema.js"
+import Message from "../../model/messageSchema.js";
 import mongoose from "mongoose";
-import { env } from "../config/env.js";
-
-const allowedModels = new Set(
-  env.ALLOWED_MODELS.split(",").map((model) => model.trim()).filter(Boolean)
-);
+import { assertAllowedModel } from "../allowedModels.js";
+import { logError } from "../../utils/safeLog.js";
 
 // getRecentChat: , getSingleChat , createChat, deleteChat
 //
@@ -31,7 +28,7 @@ export const getRecentChat = async(req,res)=>{
 
     }
     catch(err){
-        console.log(err);
+        logError("chat.request.failed", { requestId: req.requestId }, err);
         res.status(500).json({
             message: "Internal server error"
         })
@@ -64,7 +61,7 @@ export const getSingleChat = async(req,res)=>{
         }) 
     }
     catch(err){
-        console.log(err);
+        logError("chat.request.failed", { requestId: req.requestId }, err);
         res.status(500).json({
             message: "Internal server error"
         })
@@ -85,10 +82,10 @@ export const createChat = async(req,res)=>{
             })
         }
 
-        if (!allowedModels.has(model)) {
-            return res.status(400).json({
-                message: "Unsupported model"
-            });
+        try {
+            assertAllowedModel(model);
+        } catch (error) {
+            return res.status(error.statusCode || 400).json({ message: error.message });
         }
         
         const chats = await Chat.create({
@@ -108,7 +105,7 @@ export const createChat = async(req,res)=>{
 
     }
     catch(err){
-        console.log(err);
+        logError("chat.request.failed", { requestId: req.requestId }, err);
         res.status(500).json({
             message: "Internal server error"
         })
@@ -155,7 +152,7 @@ export const deleteChat = async(req,res)=>{
         })
     }
     catch(err){
-        console.log(err);
+        logError("chat.request.failed", { requestId: req.requestId }, err);
         res.status(500).json({
             message: "Internal server error"
         })
@@ -183,7 +180,7 @@ export const renameChat = async (req, res) => {
         await chat.save();
         return res.status(200).json({ chatId: chat._id, topic: chat.topic, pinned: chat.pinned });
     } catch (error) {
-        console.log(error);
+        logError("chat.request.failed", { requestId: req.requestId }, error);
         return res.status(500).json({ message: "Internal server error" });
     }
 };
@@ -200,7 +197,7 @@ export const togglePinChat = async (req, res) => {
         await chat.save();
         return res.status(200).json({ chatId: chat._id, topic: chat.topic, pinned: chat.pinned });
     } catch (error) {
-        console.log(error);
+        logError("chat.request.failed", { requestId: req.requestId }, error);
         return res.status(500).json({ message: "Internal server error" });
     }
 };

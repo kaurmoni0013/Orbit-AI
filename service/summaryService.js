@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Chat from "../model/chatSchema.js";
 import Message from "../model/messageSchema.js";
 import User from "../model/userSchema.js";
@@ -12,6 +13,7 @@ import {
   renewLock,
   reserveTokenUsage,
 } from "../utils/redisOperations.js";
+import { logError } from "../utils/safeLog.js";
 
 const SUMMARY_CHUNK_SIZE = 20;
 
@@ -22,7 +24,7 @@ export const updateSummaryIfNeeded = async (chatId) => {
 
   const renewalInterval = setInterval(() => {
     void renewLock(lock, lockTtlSeconds).catch((error) => {
-      console.log("Summary lock renewal error:", error);
+      logError("summary.lock_renewal_failed", {}, error);
     });
   }, Math.max(1, Math.floor(lockTtlSeconds / 2)) * 1000);
 
@@ -96,20 +98,32 @@ export const updateSummaryIfNeeded = async (chatId) => {
     }
     await adjustTokenUsage(tokenUsageKey, usage.totalTokens - estimatedTokens);
 
-    chat.summary = aiReply.slice(0, env.AI_SUMMARY_CHAR_LIMIT);
-    chat.summaryUpdatedAt = new Date();
-    chat.summarizedTillMessageNumber += messagesToSummarize.length;
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const updated = await Chat.updateOne(
+          { _id: chat._id, summarizedTillMessageNumber: chat.summarizedTillMessageNumber },
+          {
+            $set: {
+              summary: aiReply.slice(0, env.AI_SUMMARY_CHAR_LIMIT),
+              summaryUpdatedAt: new Date(),
+            },
+            $inc: {
+              summarizedTillMessageNumber: messagesToSummarize.length,
+              "usage.promptTokens": usage.promptTokens,
+              "usage.completionTokens": usage.completionTokens,
+              "usage.totalTokens": usage.totalTokens,
+            },
+          },
+          { session },
+        );
+        if (updated.matchedCount !== 1) throw new Error("Summary range was claimed by another job");
 
-    chat.usage.promptTokens += usage.promptTokens;
-    chat.usage.completionTokens += usage.completionTokens;
-    chat.usage.totalTokens += usage.totalTokens;
-
-    await chat.save();
-
-    const user = await User.findById(chat.userId);
-
-    if (user) {
-      await addUserTokenUsage(user, usage.totalTokens);
+        const user = await User.findById(chat.userId).session(session);
+        if (user) await addUserTokenUsage(user, usage.totalTokens, session);
+      });
+    } finally {
+      await session.endSession();
     }
 
     return Number(await redisClient.get(tokenUsageKey));

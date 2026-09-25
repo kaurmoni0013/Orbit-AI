@@ -3,6 +3,7 @@ import { connectRedis, redisClient } from "./config/redis.js";
 import connectDB from "./config/database.js";
 import mongoose from "mongoose";
 import app from "./app.js";
+import { logError } from "./utils/safeLog.js";
 
 const startServer = async () => {
     try {
@@ -25,7 +26,7 @@ const startServer = async () => {
         process.once("SIGTERM", () => shutdown("SIGTERM"));
         process.once("SIGINT", () => shutdown("SIGINT"));
     } catch (error) {
-        console.error("Server startup failed:", error);
+        logError("server.startup.failed", {}, error);
         process.exitCode = 1;
     }
 };

@@ -1,6 +1,6 @@
 import express from 'express'
 import authUserMiddleware from '../middlewares/authUserMiddleware.js';
-import { getSingleChat,getRecentChat,createChat,deleteChat,renameChat,togglePinChat } from '../controllers/chatController.js';
+import { getSingleChat,getRecentChat,createChat,deleteChat,renameChat,togglePinChat } from '../config/controllers/chatController.js';
 import authenticatedRateLimiter from '../middlewares/authenticatedRateLimiter.js';
 import loadUserMiddleware from '../middlewares/loadUserMiddleware.js';
 const chatRouter = express.Router();

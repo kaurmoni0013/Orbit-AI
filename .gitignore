@@ -2,5 +2,9 @@ node_modules
 client/node_modules
 client/dist
 .env
+.env.*
+!.env.example
+!.env.test
+!client/.env.example
 statusCode.txt
 credential.md
