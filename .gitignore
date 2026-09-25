@@ -7,4 +7,10 @@ client/dist
 !.env.test
 !client/.env.example
 statusCode.txt
+credentian.md
 credential.md
+credentials.md
+*credential*.md
+*secret*.md
+*.pem
+*.key
