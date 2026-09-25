@@ -3,6 +3,9 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import helmet from "helmet";
 import mongoose from "mongoose";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { env } from "./config/env.js";
 import { redisClient } from "./config/redis.js";
 import userRouter from "./routes/userRouter.js";
@@ -19,7 +22,32 @@ const allowedOrigins = env.CORS_ORIGINS.split(",")
 
 app.disable("x-powered-by");
 app.set("trust proxy", env.NODE_ENV === "production" ? 1 : 0);
-app.use(helmet());
+const clientDistPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "client-dist");
+const clientIndexPath = path.join(clientDistPath, "index.html");
+const servesClient = env.NODE_ENV === "production" && fs.existsSync(clientIndexPath);
+
+if (servesClient) {
+    app.use(helmet({
+        contentSecurityPolicy: {
+            directives: {
+                defaultSrc: ["'self'"],
+                baseUri: ["'self'"],
+                objectSrc: ["'none'"],
+                frameAncestors: ["'none'"],
+                formAction: ["'self'"],
+                imgSrc: ["'self'", "data:"],
+                fontSrc: ["'self'", "data:"],
+                styleSrc: ["'self'", "'unsafe-inline'"],
+                scriptSrc: ["'self'"],
+                connectSrc: ["'self'"],
+            },
+        },
+        crossOriginEmbedderPolicy: false,
+    }));
+    app.use(express.static(clientDistPath, { index: false, maxAge: "1h" }));
+} else {
+    app.use(helmet());
+}
 app.use(cors({
     origin: (origin, callback) => {
         if (!origin || allowedOrigins.includes(origin)) {
@@ -55,6 +83,16 @@ app.get("/ready", (req, res) => {
 app.use("/user", userRouter);
 app.use("/chat", chatRouter);
 app.use("/msg", messageRouter);
+
+if (servesClient) {
+    const apiPathPattern = /^\/(user|chat|msg|health|ready)(\/|$)/;
+    app.use((req, res, next) => {
+        if (req.method !== "GET" || apiPathPattern.test(req.path)) return next();
+        res.set("Cache-Control", "no-store");
+        return res.sendFile(clientIndexPath);
+    });
+}
+
 app.use(notFoundHandler);
 app.use(errorHandler);
 

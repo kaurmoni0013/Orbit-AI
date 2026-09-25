@@ -1,4 +1,4 @@
-const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/$/, "");
+const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const getUrl = (path) => `${API_URL}${path.startsWith("/") ? path : `/${path}`}`;
 
 export async function request(path, options = {}) {

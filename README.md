@@ -201,14 +201,39 @@ The Nginx proxy maps same-origin `/api/*` requests to the API and disables buffe
 
 ## Deploy
 
-Orbit runs as three independent pieces, so each can be hosted where it fits best:
+Orbit ships as one image that serves both the API and the compiled client, so the browser only ever talks to a single origin. That matters because production cookies are `Secure` and `SameSite=Strict`: a separate client host would make the browser drop the session cookie.
 
 | Piece | Requirement | Notes |
 | --- | --- | --- |
-| API | Any container or Node host | Build the root `Dockerfile`, start with `node index.js`, and health-check `GET /ready`. |
+| Web service | Any container or Node host | Build the root `Dockerfile`. It compiles `client/` with an empty `VITE_API_URL` and copies the result to `client-dist`, which the API serves with SPA fallback. Health-check `GET /ready`. |
 | Database | MongoDB replica set | Transactions are required. MongoDB Atlas free tier qualifies. |
 | Cache | Redis 7 | Any hosted Redis, including TLS-only endpoints. |
-| Client | Static host | Build `client/` with `VITE_API_URL` pointing at the public API origin. |
+
+The API routers are matched before the SPA fallback, and unknown `/user`, `/chat`, `/msg`, `/health`, and `/ready` paths still return JSON `404` instead of `index.html`. Client-side routes such as `/reset-password` are served by the same fallback, which is what makes emailed reset links work.
+
+### Deploy to Render
+
+[`render.yaml`](render.yaml) defines the service, so the repo can be deployed as a Render Blueprint:
+
+1. Push the repository to GitHub or GitLab, then in Render choose **New → Blueprint**, select the repository, and apply the blueprint.
+2. Fill in the `sync: false` values Render asks for: `MONGO_URL`, `REDIS_URL`, `OPENROUTER_API_KEY`, `CORS_ORIGINS`, `APP_URL`, and the four `SMTP_*` secrets. `JWT_SECRET` is generated for you.
+3. Set `CORS_ORIGINS` and `APP_URL` to the deployed origin, for example `https://orbit-ai.onrender.com`. Both must be the public URL, never `localhost`.
+4. Deploy, then watch the deploy log until `/ready` reports `database: up` and `redis: up`.
+
+Render does not host MongoDB, so create a free MongoDB Atlas cluster first and use its replica-set connection string for `MONGO_URL`. Atlas network access must permit Render's outbound addresses; allowing `0.0.0.0/0` works for a demo but is safer with a static egress IP or a restricted allowlist. For Redis, any hosted instance works, including a TLS-only `rediss://` endpoint.
+
+The free plan is enough for a demo but spins down after inactivity, so the first request after a pause takes a few seconds and a long-lived stream can be interrupted. Use an always-on instance for a stable public demo.
+
+To deploy the same image anywhere else, build it with the API on port `3000`:
+
+```bash
+docker build -t orbit-ai .
+docker run -p 3000:3000 --env-file .env orbit-ai
+```
+
+### Split client and API
+
+A separate static host also works if the client origin is added to `CORS_ORIGINS` and cookies are not the session mechanism. Build `client/` with `VITE_API_URL` set to the public API origin, for example `VITE_API_URL=https://api.example.com`.
 
 Production environment variables:
 
@@ -263,7 +288,7 @@ All supported variables and defaults live in [`.env.example`](.env.example). The
 | `APP_URL` | Public frontend origin used to build reset links. |
 | `SMTP_*` | SMTP host, port, security mode, credentials, and sender. Run `npm run mail:check` to verify. |
 
-The client uses `VITE_API_URL` to locate the API. Its default is `http://localhost:3000`; the Docker build defaults to `/api` for same-origin proxying.
+The client uses `VITE_API_URL` to locate the API. Its default is `http://localhost:3000`; the Docker build defaults to `/api` for same-origin proxying. Set it to an empty string, as the root `Dockerfile` does, to send requests to the page's own origin.
 
 ## API overview
 

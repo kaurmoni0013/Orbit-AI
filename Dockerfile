@@ -1,3 +1,14 @@
+FROM node:22-alpine AS client
+
+WORKDIR /build
+COPY client/package*.json ./
+RUN npm ci
+ARG VITE_API_URL=""
+ENV VITE_API_URL=$VITE_API_URL
+COPY client/ ./
+RUN npm run build
+
+
 FROM node:22-alpine
 
 WORKDIR /app
@@ -11,6 +22,7 @@ COPY --chown=node:node routes ./routes
 COPY --chown=node:node service ./service
 COPY --chown=node:node utils ./utils
 COPY --chown=node:node validators ./validators
+COPY --from=client --chown=node:node /build/dist ./client-dist
 
 ENV NODE_ENV=production
 USER node
