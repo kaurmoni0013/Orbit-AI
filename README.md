@@ -5,10 +5,14 @@
     <a href="https://github.com/kaurmoni0013/Orbit-AI/actions/workflows/ci.yml"><img src="https://github.com/kaurmoni0013/Orbit-AI/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
     <img src="https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=20232a" alt="React 19" />
     <img src="https://img.shields.io/badge/Express-5-000000?style=flat-square&logo=express&logoColor=white" alt="Express 5" />
+    <img src="https://img.shields.io/badge/Node.js-22-5fa04e?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 22" />
     <img src="https://img.shields.io/badge/MongoDB-8-47a248?style=flat-square&logo=mongodb&logoColor=white" alt="MongoDB 8" />
     <img src="https://img.shields.io/badge/Redis-7-d82c20?style=flat-square&logo=redis&logoColor=white" alt="Redis 7" />
     <img src="https://img.shields.io/badge/OpenRouter-7c5cff?style=flat-square" alt="OpenRouter" />
     <img src="https://img.shields.io/badge/Docker-2496ed?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
+  </p>
+  <p>
+    <strong><a href="https://orbit-ai-k1m5.onrender.com">Try the live demo →</a></strong>
   </p>
 </div>
 
@@ -36,6 +40,7 @@ Orbit scopes every chat and message query to the authenticated user. It is not e
 | Coordination | Redis 7 | Rate limits, token windows, logout revocation, summary locks, and atomic reservations |
 | Intelligence | OpenRouter | Allowlisted completion and streaming model access |
 | Delivery | Docker Compose | Repeatable API, Nginx-served client, MongoDB replica set, and Redis stack |
+| Live hosting | Render Web Service | The live demo runs the single-origin image on [orbit-ai-k1m5.onrender.com](https://orbit-ai-k1m5.onrender.com) with MongoDB Atlas and hosted Redis |
 
 ## Product preview
 
@@ -213,11 +218,11 @@ The API routers are matched before the SPA fallback, and unknown `/user`, `/chat
 
 ### Deploy to Render
 
-[`render.yaml`](render.yaml) defines the service, so the repo can be deployed as a Render Blueprint:
+[`render.yaml`](render.yaml) defines the service, so the repo can be deployed as a Render Blueprint. The live demo at [orbit-ai-k1m5.onrender.com](https://orbit-ai-k1m5.onrender.com) was created from it.
 
 1. Push the repository to GitHub or GitLab, then in Render choose **New → Blueprint**, select the repository, and apply the blueprint.
-2. Fill in the `sync: false` values Render asks for: `MONGO_URL`, `REDIS_URL`, `OPENROUTER_API_KEY`, `CORS_ORIGINS`, `APP_URL`, and the four `SMTP_*` secrets. `JWT_SECRET` is generated for you.
-3. Set `CORS_ORIGINS` and `APP_URL` to the deployed origin, for example `https://orbit-ai.onrender.com`. Both must be the public URL, never `localhost`.
+2. Fill in the `sync: false` values Render asks for: `MONGO_URL`, `REDIS_URL`, `OPENROUTER_API_KEY`, `CORS_ORIGINS`, `APP_URL`, and the three `SMTP_*` secrets. `JWT_SECRET` is generated for you.
+3. Set `CORS_ORIGINS` and `APP_URL` to the deployed origin, for example `https://orbit-ai-k1m5.onrender.com`. Both must be the public URL, never `localhost`.
 4. Deploy, then watch the deploy log until `/ready` reports `database: up` and `redis: up`.
 
 Render does not host MongoDB, so create a free MongoDB Atlas cluster first and use its replica-set connection string for `MONGO_URL`. Atlas network access must permit Render's outbound addresses; allowing `0.0.0.0/0` works for a demo but is safer with a static egress IP or a restricted allowlist. For Redis, any hosted instance works, including a TLS-only `rediss://` endpoint.
