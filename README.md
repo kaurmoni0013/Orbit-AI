@@ -2,7 +2,7 @@
   <img src="docs/assets/orbit-banner.svg" alt="Orbit AI — Make room for better questions" width="100%" />
   <p><strong>A quiet workspace for questions, drafts, and useful next steps.</strong></p>
   <p>
-    <a href="https://github.com/kaurmoni0013/orbit-arena/actions/workflows/ci.yml"><img src="https://github.com/kaurmoni0013/orbit-arena/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
+    <a href="https://github.com/kaurmoni0013/Orbit-AI/actions/workflows/ci.yml"><img src="https://github.com/kaurmoni0013/Orbit-AI/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
     <img src="https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react&logoColor=20232a" alt="React 19" />
     <img src="https://img.shields.io/badge/Express-5-000000?style=flat-square&logo=express&logoColor=white" alt="Express 5" />
     <img src="https://img.shields.io/badge/MongoDB-8-47a248?style=flat-square&logo=mongodb&logoColor=white" alt="MongoDB 8" />
@@ -125,8 +125,8 @@ A client disconnect or provider failure releases the reservation, aborts the pro
 **1. Configure the API**
 
 ```bash
-git clone https://github.com/kaurmoni0013/orbit-arena.git
-cd orbit-arena
+git clone https://github.com/kaurmoni0013/Orbit-AI.git
+cd Orbit-AI
 npm install
 cp .env.example .env
 ```
