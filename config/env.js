@@ -44,6 +44,11 @@ const envSchema = z.object({
         (value) => (value === "" ? undefined : value),
         z.string().trim().min(1).default("Orbit AI <no-reply@example.com>"),
     ),
+    RESEND_API_KEY: z.string().trim().default(""),
+    MAIL_FROM: z.preprocess(
+        (value) => (value === "" ? undefined : value),
+        z.string().trim().default(""),
+    ),
     MONGO_SERVER_SELECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
 }).superRefine((value, context) => {
     if (Boolean(value.SMTP_USER) !== Boolean(value.SMTP_PASSWORD)) {
@@ -69,8 +74,12 @@ const envSchema = z.object({
         if (value.OPENROUTER_API_KEY.startsWith("replace-")) {
             context.addIssue({ code: "custom", path: ["OPENROUTER_API_KEY"], message: "OPENROUTER_API_KEY must be replaced in production" });
         }
-        if (!value.SMTP_HOST) {
-            context.addIssue({ code: "custom", path: ["SMTP_HOST"], message: "SMTP_HOST is required in production" });
+        if (!value.SMTP_HOST && !value.RESEND_API_KEY) {
+            context.addIssue({
+                code: "custom",
+                path: ["SMTP_HOST"],
+                message: "SMTP_HOST or RESEND_API_KEY is required in production",
+            });
         }
         if (value.CORS_ORIGINS.includes("localhost")) {
             context.addIssue({ code: "custom", path: ["CORS_ORIGINS"], message: "Production CORS_ORIGINS must not include localhost" });
@@ -89,3 +98,6 @@ if (!result.success) {
 
 export const env = result.data;
 export const smtpConfigured = Boolean(env.SMTP_HOST && env.SMTP_FROM);
+export const httpMailConfigured = Boolean(env.RESEND_API_KEY && (env.MAIL_FROM || env.SMTP_FROM));
+export const mailConfigured = smtpConfigured || httpMailConfigured;
+export const mailSender = env.MAIL_FROM || env.SMTP_FROM;

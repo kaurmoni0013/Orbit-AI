@@ -6,8 +6,8 @@ import Chat from "../../model/chatSchema.js";
 import Message from "../../model/messageSchema.js";
 import { signupSchema, loginSchema, forgotPasswordSchema, resetPasswordSchema } from "../../validators/userValidator.js";
 import { redisClient } from "../redis.js";
-import { env, smtpConfigured } from "../env.js";
-import { getMailTransport, describeMailError } from "../mailer.js";
+import { env, mailConfigured } from "../env.js";
+import { sendMail, describeMailError } from "../mailer.js";
 import { getTokenBlocklistKey, jwtSignOptions } from "../../utils/token.js";
 
 const DUMMY_PASSWORD_HASH = "$2b$12$ESui7L4r0HKuEq/4MSAJyu3mQWtrm9.5I6.fLcfpBiz2bHGQ8a2rS";
@@ -63,8 +63,7 @@ const escapeHtml = (value) => value.replace(/[&<>"']/g, (character) => ({
 
 const sendPasswordResetEmail = async ({ email, resetLink }) => {
     const safeLink = escapeHtml(resetLink);
-    await getMailTransport().sendMail({
-        from: env.SMTP_FROM,
+    await sendMail({
         to: email,
         subject: "Reset your Orbit AI password",
         text: `Reset your Orbit AI password using this link: ${resetLink}\n\nThis link expires in ${env.PASSWORD_RESET_TOKEN_TTL_MINUTES} minutes. If you did not request it, you can ignore this email.`,
@@ -146,7 +145,7 @@ export const forgotPassword = async (req, res) => {
             user.passwordResetExpiresAt = new Date(Date.now() + env.PASSWORD_RESET_TOKEN_TTL_MINUTES * 60 * 1000);
             await user.save();
             previewUrl = createResetLink(rawToken);
-            if (smtpConfigured) {
+            if (mailConfigured) {
                 try {
                     await sendPasswordResetEmail({ email: user.email, resetLink: previewUrl });
                     emailSent = true;
@@ -160,8 +159,8 @@ export const forgotPassword = async (req, res) => {
         const isLocal = env.NODE_ENV !== "production";
         return res.status(202).json({
             message: "If an account exists for that email, a password reset link has been sent.",
-            ...(isLocal && smtpConfigured && user ? { emailSent } : {}),
-            ...(isLocal && previewUrl && (!smtpConfigured || !emailSent) ? { previewUrl } : {}),
+            ...(isLocal && mailConfigured && user ? { emailSent } : {}),
+            ...(isLocal && previewUrl && (!mailConfigured || !emailSent) ? { previewUrl } : {}),
         });
     } catch (error) {
         reportError(req, "user.password_reset.request_failed", error);

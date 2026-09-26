@@ -221,11 +221,13 @@ The API routers are matched before the SPA fallback, and unknown `/user`, `/chat
 [`render.yaml`](render.yaml) defines the service, so the repo can be deployed as a Render Blueprint. The live demo at [orbit-ai-k1m5.onrender.com](https://orbit-ai-k1m5.onrender.com) was created from it.
 
 1. Push the repository to GitHub or GitLab, then in Render choose **New → Blueprint**, select the repository, and apply the blueprint.
-2. Fill in the `sync: false` values Render asks for: `MONGO_URL`, `REDIS_URL`, `OPENROUTER_API_KEY`, `CORS_ORIGINS`, `APP_URL`, and the three `SMTP_*` secrets. `JWT_SECRET` is generated for you.
+2. Fill in the `sync: false` values Render asks for: `MONGO_URL`, `REDIS_URL`, `OPENROUTER_API_KEY`, `CORS_ORIGINS`, `APP_URL`, and the mail values `RESEND_API_KEY` and `MAIL_FROM`. `JWT_SECRET` is generated for you.
 3. Set `CORS_ORIGINS` and `APP_URL` to the deployed origin, for example `https://orbit-ai-k1m5.onrender.com`. Both must be the public URL, never `localhost`.
 4. Deploy, then watch the deploy log until `/ready` reports `database: up` and `redis: up`.
 
 Render does not host MongoDB, so create a free MongoDB Atlas cluster first and use its replica-set connection string for `MONGO_URL`. Atlas network access must permit Render's outbound addresses; allowing `0.0.0.0/0` works for a demo but is safer with a static egress IP or a restricted allowlist. For Redis, any hosted instance works, including a TLS-only `rediss://` endpoint.
+
+**Use HTTPS mail on Render, not SMTP.** Free Render web services cannot send outbound traffic on ports 25, 465, or 587, so Gmail SMTP fails with `ESOCKET` on `CONN` after the connection timeout and no email is ever delivered. Set `RESEND_API_KEY` and `MAIL_FROM` to send through the Resend API over port 443 instead. SMTP still works locally, on a paid Render instance, or on any host that leaves those ports open.
 
 The free plan is enough for a demo but spins down after inactivity, so the first request after a pause takes a few seconds and a long-lived stream can be interrupted. Use an always-on instance for a stable public demo.
 
@@ -252,6 +254,8 @@ OPENROUTER_API_KEY=sk-or-...
 CORS_ORIGINS=https://your-client-origin.example
 APP_URL=https://your-client-origin.example
 ALLOWED_MODELS=openai/gpt-4o-mini
+RESEND_API_KEY=re_...
+MAIL_FROM=Orbit AI <you@your-verified-domain>
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_SECURE=false
@@ -262,7 +266,7 @@ SMTP_FROM=Orbit AI <you@gmail.com>
 
 Deployment rules the app enforces at startup:
 
-- `SMTP_HOST`, a non-placeholder `JWT_SECRET`, and a non-placeholder `OPENROUTER_API_KEY` are mandatory in production.
+- Either `SMTP_HOST` or `RESEND_API_KEY` is mandatory in production, as are a non-placeholder `JWT_SECRET` and a non-placeholder `OPENROUTER_API_KEY`. When `RESEND_API_KEY` is set it takes priority over SMTP.
 - `CORS_ORIGINS` must not contain `localhost`, so set the real client origin.
 - Cookies become `Secure` and `SameSite=Strict` in production, so the client must be served over HTTPS from the same site, or the browser will drop the session cookie.
 - The app trusts exactly one proxy hop in production (`trust proxy = 1`), so rate limiting sees real client IPs when a single proxy or load balancer fronts the API. Keep it that way; trusting more hops lets clients spoof `X-Forwarded-For`.
@@ -292,6 +296,9 @@ All supported variables and defaults live in [`.env.example`](.env.example). The
 | `PASSWORD_RESET_TOKEN_TTL_MINUTES` | Lifetime of a one-time password reset link. |
 | `APP_URL` | Public frontend origin used to build reset links. |
 | `SMTP_*` | SMTP host, port, security mode, credentials, and sender. Run `npm run mail:check` to verify. |
+| `RESEND_API_KEY` | Resend API key for HTTPS mail delivery. Takes priority over SMTP when set, and is the only option on hosts that block outbound SMTP ports such as free Render instances. |
+| `MAIL_FROM` | Sender used by the HTTPS mail provider. Falls back to `SMTP_FROM`. |
+| `MAIL_CHECK_RECIPIENT` | Address that `npm run mail:check` uses when verifying the HTTPS provider. |
 
 The client uses `VITE_API_URL` to locate the API. Its default is `http://localhost:3000`; the Docker build defaults to `/api` for same-origin proxying. Set it to an empty string, as the root `Dockerfile` does, to send requests to the page's own origin.
 
@@ -328,11 +335,13 @@ Streaming endpoints return `text/event-stream` events such as `token`, `done`, a
 - The raw reset token is never stored; only its SHA-256 hash and expiry are persisted.
 - Reset links use a URL fragment so the token is not sent to the frontend server or access logs.
 - Reset success increments the user session version, invalidating existing JWTs, and clears the current cookie.
-- In non-production environments without SMTP, a valid development-only preview link is returned to make local testing possible.
-- With SMTP configured, non-production responses report `emailSent`; when delivery fails they also return the preview link so local testing keeps working.
-- Production requires SMTP configuration and never returns the preview link.
+- In non-production environments without any mail provider, a valid development-only preview link is returned to make local testing possible.
+- With a mail provider configured, non-production responses report `emailSent`; when delivery fails they also return the preview link so local testing keeps working.
+- Production requires either SMTP or `RESEND_API_KEY` and never returns the preview link.
 
-### Sending real email (Gmail example)
+### Sending real email
+
+Gmail over SMTP works on any host that allows outbound port 587:
 
 ```dotenv
 SMTP_HOST=smtp.gmail.com
@@ -346,13 +355,23 @@ APP_URL=https://your-deployed-origin.example
 
 Gmail does not accept account passwords: enable 2-Step Verification, create an App Password at <https://myaccount.google.com/apppasswords>, and use that 16-character value as `SMTP_PASSWORD`. Port 587 is required so STARTTLS can upgrade the connection before credentials are sent; setting `SMTP_HOST` without credentials is rejected at startup.
 
+On hosts that block outbound SMTP, deliver over HTTPS instead. Create a Resend API key and set:
+
+```dotenv
+RESEND_API_KEY=re_...
+MAIL_FROM=Orbit AI <you@your-verified-domain>
+APP_URL=https://your-deployed-origin.example
+```
+
+Resend's free tier sends to its own `onboarding@resend.dev` address until you verify a domain. When `RESEND_API_KEY` is present the app uses the API over port 443 and ignores the SMTP settings.
+
 Verify the configuration before testing the UI:
 
 ```bash
 npm run mail:check
 ```
 
-The command reports `smtp.verified` on success and otherwise prints the SMTP error code with a targeted hint, such as `EAUTH` for rejected Gmail credentials or `ETIMEDOUT` for a blocked outbound port. Restart the API after changing `.env` so the new transport is loaded.
+The command reports `smtp.verified` for SMTP, or sends a real test message and reports `mail.sent` for the HTTPS provider. Failures print the provider code with a targeted hint, such as `EAUTH` for rejected Gmail credentials, `EHTTPMAIL` for a rejected HTTPS request, or `ETIMEDOUT` and `ESOCKET` for a blocked outbound port. Restart the API after changing `.env` so the new transport is loaded.
 
 `APP_URL` must be reachable from the recipient's browser. A `localhost` link only opens on the machine that ran the app, so use a tunnel or deployed origin for anyone else. Gmail also enforces per-account sending limits, so repeated reset requests in a short window can be delayed or refused.
 

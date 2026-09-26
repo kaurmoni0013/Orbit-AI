@@ -25,8 +25,12 @@ services:
         sync: false
       - key: ALLOWED_MODELS
         value: openai/gpt-4o-mini
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
       - key: SMTP_HOST
-        value: smtp.gmail.com
+        value: ""
       - key: SMTP_PORT
         value: 587
       - key: SMTP_SECURE
@@ -36,4 +40,4 @@ services:
       - key: SMTP_PASSWORD
         sync: false
       - key: SMTP_FROM
-        sync: false
+        value: Orbit AI <no-reply@example.com>
