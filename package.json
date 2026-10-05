@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js",
+    "dev": "node --watch index.js",
     "check": "node scripts/check-syntax.js",
     "mail:check": "node scripts/check-smtp.js",
     "test": "node --env-file=.env.test --test --test-concurrency=1"
@@ -29,7 +29,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "mongodb-memory-server": "^11.2.0",
-    "nodemon": "^3.1.14"
+    "mongodb-memory-server": "^11.2.0"
   }
 }
