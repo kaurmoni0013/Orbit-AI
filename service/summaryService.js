@@ -40,6 +40,7 @@ export const updateSummaryIfNeeded = async (chatId) => {
 
     const messagesToSummarize = await Message.find({
       chatId: chat._id,
+      userId: chat.userId,
     })
       .sort({ createdAt: 1 })
       .skip(chat.summarizedTillMessageNumber)
@@ -102,7 +103,7 @@ export const updateSummaryIfNeeded = async (chatId) => {
     try {
       await session.withTransaction(async () => {
         const updated = await Chat.updateOne(
-          { _id: chat._id, summarizedTillMessageNumber: chat.summarizedTillMessageNumber },
+          { _id: chat._id, userId: chat.userId, summarizedTillMessageNumber: chat.summarizedTillMessageNumber },
           {
             $set: {
               summary: aiReply.slice(0, env.AI_SUMMARY_CHAR_LIMIT),

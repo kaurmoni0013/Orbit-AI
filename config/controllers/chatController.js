@@ -133,7 +133,8 @@ export const deleteChat = async(req,res)=>{
         try {
             await session.withTransaction(async () => {
                 await Message.deleteMany({
-                    chatId: chat._id
+                    chatId: chat._id,
+                    userId: req.user._id,
                 }, { session });
 
                 await Chat.deleteOne({

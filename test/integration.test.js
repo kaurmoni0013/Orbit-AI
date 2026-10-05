@@ -284,6 +284,27 @@ test("users cannot access another user's chat", async () => {
     assert.equal(remove.status, 403);
 });
 
+test("chat history only returns messages owned by the authenticated user", async () => {
+    const owner = await signup("history-owner");
+    const other = await signup("history-other");
+    const ownerUser = await User.findOne({ email: owner.email });
+    const otherUser = await User.findOne({ email: other.email });
+    const chat = await Chat.create({ userId: ownerUser._id, model: MODEL });
+    await Message.create({
+        userId: otherUser._id,
+        chatId: chat._id,
+        role: "user",
+        content: "This belongs to another account",
+    });
+
+    const response = await request(`/msg/${chat._id}`, {}, owner.cookie);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.msg, []);
+    assert.equal(body.pagination.total, 0);
+});
+
 test("users cannot delete another user's account data", async () => {
     const owner = await signup("account-owner");
     const other = await signup("account-other");

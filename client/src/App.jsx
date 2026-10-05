@@ -3,6 +3,92 @@ import { request, streamRequest } from "./api.js";
 
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
 const createRequestKey = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const PROFILE_IMAGE_LIMIT = 50 * 1024;
+
+const AVATAR_IMAGES = {
+  female: "/avatars/female_avatar_circle.png",
+  male: "/avatars/male_avatar_circle.png",
+  neutral: "/avatars/neutral_avatar_circle.png",
+};
+const ROBOT_AVATAR = "/avatars/robot_avatar_circle.png";
+const animeAvatar = (gender) => AVATAR_IMAGES[gender] || AVATAR_IMAGES.neutral;
+
+function profileStorageKey(user) {
+  return `orbit-profile:${(user.email || "").toLowerCase()}`;
+}
+
+function loadProfileSettings(user) {
+  try {
+    const saved = localStorage.getItem(profileStorageKey(user));
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
+function Avatar({ src, alt, className = "", variant = "photo" }) {
+  return <span className={`avatar-image avatar-${variant} ${className}`}><img className="avatar-photo" src={src} alt={alt} /></span>;
+}
+
+function ProfileDialog({ user, initialProfile, onSave, onClose }) {
+  const [gender, setGender] = useState(initialProfile?.gender || "female");
+  const [photo, setPhoto] = useState(initialProfile?.photo || "");
+  const [error, setError] = useState("");
+
+  const selectPhoto = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Choose an image file.");
+      return;
+    }
+    if (file.size > PROFILE_IMAGE_LIMIT) {
+      setError("Choose an image smaller than 50 KB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setPhoto(reader.result);
+        setError("");
+      } else {
+        setError("This image could not be read.");
+      }
+    };
+    reader.onerror = () => setError("This image could not be read.");
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => {
+    const saveError = onSave({ gender, photo });
+    if (saveError) setError(saveError);
+  };
+  const avatar = photo || animeAvatar(gender);
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+        <button className="dialog-close icon-button" type="button" aria-label="Close profile settings" onClick={onClose}><Icon name="close" size={18} /></button>
+        <div className="profile-preview"><Avatar src={avatar} alt="Your avatar preview" variant={photo ? "photo" : gender} /><span className="online-glow" /></div>
+        <p className="dialog-kicker">MAKE IT YOURS</p>
+        <h2 id="profile-title">Choose your avatar</h2>
+        <p className="dialog-description">Pick an anime look or add a photo of your own.</p>
+        <div className="avatar-choices" role="group" aria-label="Anime avatar style">
+          {["female", "male", "neutral"].map((option) => <button key={option} type="button" className={`avatar-choice ${gender === option && !photo ? "selected" : ""}`} onClick={() => { setGender(option); setPhoto(""); }}>
+            <Avatar src={animeAvatar(option)} alt="" variant={option} />
+            <span>{option === "neutral" ? "Neutral" : option[0].toUpperCase() + option.slice(1)}</span>
+          </button>)}
+        </div>
+        <label className="upload-photo">Upload a profile photo<input type="file" accept="image/*" onChange={selectPhoto} /><small>Image files up to 50 KB</small></label>
+        {photo && <button type="button" className="remove-photo" onClick={() => setPhoto("")}>Use anime avatar instead</button>}
+        {error && <p className="error" role="alert">{error}</p>}
+        <button type="button" className="primary-button save-profile" onClick={save}>Save avatar<Icon name="arrow" size={17} /></button>
+        <small className="profile-storage-note">Saved privately in this browser for {user.name}.</small>
+      </section>
+    </div>
+  );
+}
 
 function Icon({ name, size = 18 }) {
   const icons = {
@@ -187,19 +273,15 @@ function AuthScreen({ onAuthenticated }) {
       <section className="auth-editorial">
         <div className="wordmark"><span className="brand-mark"><Icon name="orbit" size={17} /></span><span>ORBIT</span><small>AI WORKSPACE</small></div>
         <div className="editorial-copy">
-          <p className="section-label">FIELD NOTE / 01</p>
-          <h1>Make room for <em>better questions.</em></h1>
-          <p>Orbit is a quiet place to think through the things that matter. Bring a question, a rough idea, or a problem that needs a second pair of eyes.</p>
-        </div>
-        <div className="editorial-index">
-          <div><span>01</span><p>Keep context<br />Close to the work</p></div>
-          <div><span>02</span><p>Think in drafts<br />Not conclusions</p></div>
-          <div><span>03</span><p>Leave with<br />A useful next step</p></div>
+          <div className="hero-orb"><span className="hero-orb-core"><Icon name="orbit" size={64} /></span><i /><i /><i /></div>
+          <p className="section-label">A NEW KIND OF THINKING SPACE</p>
+          <h1>Your ideas,<br /><em>amplified.</em></h1>
+          <p>A little more clarity. A lot more possibility. Meet the AI workspace that moves with you.</p>
         </div>
       </section>
       <section className="auth-side">
         <div className="auth-card">
-          <div className="auth-card-head"><span className="section-label">ACCOUNT ACCESS</span><span className="auth-index">ORBIT / 01</span></div>
+          <div className="auth-card-head"><span className="section-label">YOUR WORKSPACE</span></div>
           <h2>{title}</h2>
           <p className="auth-subtitle">{subtitle}</p>
           {notice && <p className="notice auth-notice" role="status">{notice}{previewUrl && <a href={previewUrl}>Open local reset link</a>}</p>}
@@ -237,6 +319,8 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profileSettings, setProfileSettings] = useState(null);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem("orbit-theme") || "dark"; } catch { return "dark"; }
   });
@@ -250,12 +334,14 @@ function App() {
   const composerRef = useRef(null);
   const streamControllerRef = useRef(null);
   const streamGenerationRef = useRef(0);
+  const chatListGenerationRef = useRef(0);
   const chatLoadControllerRef = useRef(null);
   const chatLoadGenerationRef = useRef(0);
 
   const loadChats = async () => {
+    const generation = ++chatListGenerationRef.current;
     const result = await request("/chat/getRecentChat?limit=50");
-    setChats(result.chats || []);
+    if (generation === chatListGenerationRef.current) setChats(result.chats || []);
   };
 
   useEffect(() => {
@@ -265,6 +351,9 @@ function App() {
         const profile = await request("/user/profile");
         if (!active) return;
         setUser(profile);
+        const savedProfile = loadProfileSettings(profile);
+        setProfileSettings(savedProfile || { gender: "female", photo: "" });
+        setProfileDialogOpen(!savedProfile);
         try {
           await loadChats();
         } catch (err) {
@@ -458,8 +547,12 @@ function App() {
   };
 
   const handleAuthenticated = async (result) => {
+    chatListGenerationRef.current += 1;
     cancelChatLoad();
     setUser(result);
+    const savedProfile = loadProfileSettings(result);
+    setProfileSettings(savedProfile || { gender: "female", photo: "" });
+    setProfileDialogOpen(!savedProfile);
     setBootError("");
     setError("");
     setChats([]);
@@ -477,9 +570,20 @@ function App() {
     }
   };
 
+  const saveProfile = (settings) => {
+    try {
+      localStorage.setItem(profileStorageKey(user), JSON.stringify(settings));
+      setProfileSettings(settings);
+      setProfileDialogOpen(false);
+    } catch {
+      return "Your profile could not be saved. Try a smaller image.";
+    }
+  };
+
   const logout = async () => {
     if (loggingOut) return;
     setLoggingOut(true);
+    chatListGenerationRef.current += 1;
     setError("");
     cancelChatLoad();
     streamGenerationRef.current += 1;
@@ -529,7 +633,7 @@ function App() {
         <div className="logo"><span className="brand-mark"><Icon name="orbit" size={16} /></span><span>orbit</span><b>ai</b></div>
         <button className="new-chat" onClick={newChat}><Icon name="plus" size={17} /> New conversation</button>
         <label className="chat-search"><Icon name="search" size={15} /><input aria-label="Search conversations" placeholder="Search library" value={search} onChange={(e) => setSearch(e.target.value)} /></label>
-        <div className="sidebar-heading"><span>LIBRARY</span><span>{visibleChats.length.toString().padStart(2, "0")}</span></div>
+        <div className="sidebar-heading"><span>Your chats</span><span>{visibleChats.length.toString().padStart(2, "0")}</span></div>
         <div className="chat-list">
           {visibleChats.length ? visibleChats.map((chat) => <div className={`chat-row ${activeChat?._id === chat._id ? "selected" : ""}`} key={chat._id}>
             {renamingChatId === chat._id ? <form className="rename-form" onSubmit={(event) => { event.preventDefault(); renameChat(chat); }}><input aria-label="Conversation name" value={renameValue} maxLength="120" autoFocus onChange={(event) => setRenameValue(event.target.value)} /><button type="submit" aria-label="Save conversation name"><Icon name="check" size={13} /></button><button type="button" aria-label="Cancel rename" onClick={() => setRenamingChatId(null)}><Icon name="close" size={13} /></button></form> : <button className="chat-link" onClick={() => selectChat(chat)}><span className="chat-icon"><span /></span><span>{chat.topic || "New conversation"}</span>{chat.pinned && <Icon name="pin" size={12} />}</button>}
@@ -537,15 +641,15 @@ function App() {
           </div>) : <p className="sidebar-empty">{search ? "No matching conversations." : "Your saved conversations will appear here."}</p>}
         </div>
         <div className="sidebar-bottom">
-          <div className="account"><div className="avatar">{user.name?.[0]?.toUpperCase() || "U"}</div><div className="account-copy"><strong>{user.name}</strong><small>{user.email}</small></div><button className="icon-button" aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"} title={theme === "dark" ? "Light theme" : "Dark theme"} onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}><Icon name={theme === "dark" ? "sun" : "moon"} size={15} /></button><button className="icon-button" aria-label="Open account menu" onClick={() => setProfileOpen((open) => !open)}><Icon name="chevron" size={15} /></button></div>
-          {profileOpen && <div className="profile-popover"><div><strong>{user.name}</strong><small>{user.email}</small></div><button className="popover-action danger" onClick={logout} disabled={loggingOut}><Icon name="logout" size={15} /> {loggingOut ? "Signing out..." : "Sign out"}</button></div>}
+          <div className="account"><Avatar className="account-avatar" src={profileSettings?.photo || animeAvatar(profileSettings?.gender || "female")} alt={`${user.name}'s avatar`} variant={profileSettings?.photo ? "photo" : profileSettings?.gender || "female"} /><div className="account-copy"><strong>{user.name}</strong><small>{user.email}</small></div><button className="icon-button" aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"} title={theme === "dark" ? "Light theme" : "Dark theme"} onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}><Icon name={theme === "dark" ? "sun" : "moon"} size={15} /></button><button className="icon-button" aria-label="Open account menu" onClick={() => setProfileOpen((open) => !open)}><Icon name="chevron" size={15} /></button></div>
+          {profileOpen && <div className="profile-popover"><div><strong>{user.name}</strong><small>{user.email}</small></div><button className="popover-action" onClick={() => { setProfileDialogOpen(true); setProfileOpen(false); }}>Edit avatar</button><button className="popover-action danger" onClick={logout} disabled={loggingOut}><Icon name="logout" size={15} /> {loggingOut ? "Signing out..." : "Sign out"}</button></div>}
         </div>
       </aside>
       <section className="conversation">
-        <header className="topbar"><button className="mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Icon name="menu" size={20} /></button><div className="topbar-brand"><span className="brand-mark"><Icon name="orbit" size={15} /></span><strong>ORBIT / AI</strong></div><div className="session-title"><span>{activeChat?.topic || "New conversation"}</span><small>{activeChat ? "Saved in your library" : "A blank page, for now"}</small></div><div className="status-pill"><i />{busy ? "GENERATING" : "READY"}</div></header>
+        <header className="topbar"><button className="mobile-menu" aria-label="Open navigation" onClick={() => setSidebarOpen(true)}><Icon name="menu" size={20} /></button><div className="topbar-brand"><span className="brand-mark"><Icon name="orbit" size={15} /></span><strong>ORBIT AI</strong></div><div className="session-title"><span>{activeChat?.topic || "New conversation"}</span><small>{activeChat ? "Saved conversation" : "Ready when you are"}</small></div><div className="status-pill"><i />{busy ? "THINKING" : "ONLINE"}</div></header>
         <div className="message-area">
-          {!messages.length && <div className="empty-state"><span className="empty-mark"><Icon name="note" size={28} /></span><p className="section-label">OPEN PAGE / 01</p><h1>Start with a question<br /><em>worth keeping.</em></h1><p>Use Orbit to make sense of a topic, shape a draft, or find the next useful move.</p><div className="prompt-grid"><button onClick={() => setDraft("Help me map out a project I am considering.")}><span>PLAN</span>Map a project I’m considering<Icon name="arrow" size={15} /></button><button onClick={() => setDraft("Review this idea and help me find the weak points.")}><span>REVIEW</span>Find the weak points in an idea<Icon name="arrow" size={15} /></button><button onClick={() => setDraft("Explain a difficult concept in plain language.")}><span>LEARN</span>Explain a difficult concept<Icon name="arrow" size={15} /></button><button onClick={() => setDraft("Help me turn a rough draft into something clear.")}><span>WRITE</span>Turn a rough draft into something clear<Icon name="arrow" size={15} /></button></div></div>}
-          {messages.map((message, index) => <article className={`message ${message.role}`} key={message._id || index}><div className="message-label"><span className={message.role === "assistant" ? "orbit-dot" : "user-dot"} />{message.role === "assistant" ? "ORBIT" : "YOU"}{message.role === "assistant" && message._id === streamingMessageId && <span className="streaming-indicator" aria-label="Orbit is replying"><i /><i /><i /></span>}</div>{message.role === "assistant" ? <StructuredMessage content={message.content} /> : <p>{message.content}</p>}</article>)}
+          {!messages.length && <div className="empty-state"><div className="empty-robot"><Avatar src={ROBOT_AVATAR} alt="Orbit AI robot" variant="robot" /></div><p className="section-label">YOUR AI COMPANION</p><h1>What’s on your<br /><em>mind today?</em></h1><p>Ask anything, explore an idea, or make something great together.</p><div className="prompt-grid"><button onClick={() => setDraft("Help me map out a project I am considering.")}><span>PLAN</span>Plan a new project<Icon name="arrow" size={15} /></button><button onClick={() => setDraft("Review this idea and help me find the weak points.")}><span>IDEAS</span>Explore an idea<Icon name="arrow" size={15} /></button><button onClick={() => setDraft("Explain a difficult concept in plain language.")}><span>LEARN</span>Learn something new<Icon name="arrow" size={15} /></button><button onClick={() => setDraft("Help me turn a rough draft into something clear.")}><span>CREATE</span>Make a first draft<Icon name="arrow" size={15} /></button></div></div>}
+          {messages.map((message, index) => <article className={`message ${message.role}`} key={message._id || index}><div className="message-avatar-wrap"><Avatar className="message-avatar" src={message.role === "assistant" ? ROBOT_AVATAR : profileSettings?.photo || animeAvatar(profileSettings?.gender || "female")} alt={message.role === "assistant" ? "Orbit AI" : user.name} variant={message.role === "assistant" ? "robot" : profileSettings?.photo ? "photo" : profileSettings?.gender || "female"} /><div className="message-content"><div className="message-label">{message.role === "assistant" ? "Orbit" : user.name}{message.role === "assistant" && message._id === streamingMessageId && <span className="streaming-indicator" aria-label="Orbit is replying"><i /><i /><i /></span>}</div>{message.role === "assistant" ? <StructuredMessage content={message.content} /> : <p>{message.content}</p>}</div></div></article>)}
         </div>
         <div className="composer-wrap">
           {error && <div className="composer-error-actions"><p className="error" role="alert">{error}</p>{retryPrompt && !busy && <button type="button" className="retry-button" onClick={retryLastMessage}>Try again</button>}</div>}
@@ -553,6 +657,7 @@ function App() {
           <div className="composer-meta"><span>Orbit can make mistakes. Check important details.</span><span>Enter to send · Shift + Enter for a new line</span></div>
         </div>
       </section>
+      {profileDialogOpen && <ProfileDialog user={user} initialProfile={profileSettings} onSave={saveProfile} onClose={() => setProfileDialogOpen(false)} />}
     </main>
   );
 }

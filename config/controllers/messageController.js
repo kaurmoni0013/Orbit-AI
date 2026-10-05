@@ -26,6 +26,7 @@ const findCompletedPair = async (userId, key) => {
   if (!userMessage) return null;
   const assistantMessage = await Message.findOne({
     chatId: userMessage.chatId,
+    userId,
     role: "assistant",
     createdAt: { $gte: userMessage.createdAt },
   }).sort({ createdAt: 1 });
@@ -90,8 +91,8 @@ export const getMessage = async(req,res)=>{
         const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 100);
         const skip = (page - 1) * limit;
         const [messages, total] = await Promise.all([
-            Message.find({ chatId }).sort({createdAt:1}).skip(skip).limit(limit),
-            Message.countDocuments({ chatId }),
+            Message.find({ chatId, userId: req.user._id }).sort({createdAt:1}).skip(skip).limit(limit),
+            Message.countDocuments({ chatId, userId: req.user._id }),
         ]);
 
         res.status(200).json({
@@ -199,6 +200,7 @@ export const sendMessage = async (req, res) => {
     // oldMessages: Jinki abhi tak summary create nahi hui hai
     const oldMessages = await Message.find({
       chatId: chat._id,
+      userId: req.user._id,
     })
       .sort({ createdAt: 1 })
       .skip(chat.summarizedTillMessageNumber);
@@ -268,7 +270,7 @@ export const sendMessage = async (req, res) => {
     }
     if (createdChat) {
       await Promise.all([
-        Message.deleteMany({ chatId: createdChat._id }),
+        Message.deleteMany({ chatId: createdChat._id, userId: req.user._id }),
         Chat.deleteOne({ _id: createdChat._id, userId: req.user._id }),
       ]).catch((cleanupError) => {
         logError("chat.cleanup_failed", { requestId: req.requestId }, cleanupError);
@@ -353,7 +355,7 @@ export const streamMessage = async (req, res) => {
       chat = await Chat.create({ userId: req.user._id, model, topic: trimmedContent.slice(0, 40) });
     }
 
-    const oldMessages = await Message.find({ chatId: chat._id })
+    const oldMessages = await Message.find({ chatId: chat._id, userId: req.user._id })
       .sort({ createdAt: 1 })
       .skip(chat.summarizedTillMessageNumber);
     const messages = buildMessagesForAI({ chat, oldMessages, currentMessage: trimmedContent });
